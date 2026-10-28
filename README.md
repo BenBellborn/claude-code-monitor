@@ -11,12 +11,8 @@ packages to install, shipped as a Claude Code plugin.
    ```text
    claude plugin install ccm --marketplace BenBellborn/claude-code-monitor
    ```
-   This installs for your user, so the monitor runs in every project. On older versions, run in Claude Code:
-   ```text
-   /plugin marketplace add BenBellborn/claude-code-monitor
-   /plugin install ccm@claude-code-monitor
-   ```
-   and pick **user scope**.
+   This installs for your user, so the monitor runs in every project. If `--marketplace` is an unknown option, run
+   `claude update` first.
 3. Send a prompt in any session, or start a new one. The monitor window opens. Close it, and it stays closed until the next
    session.
 
