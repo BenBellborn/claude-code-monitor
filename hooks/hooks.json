@@ -6,7 +6,17 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/ccm.py\" > /dev/null 2>&1 || python \"${CLAUDE_PLUGIN_ROOT}/ccm.py\" > /dev/null 2>&1"
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/ccm.py\" --hook > /dev/null 2>&1 || python \"${CLAUDE_PLUGIN_ROOT}/ccm.py\" --hook > /dev/null 2>&1 || true"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/ccm.py\" --hook > /dev/null 2>&1 || python \"${CLAUDE_PLUGIN_ROOT}/ccm.py\" --hook > /dev/null 2>&1 || true"
           }
         ]
       }

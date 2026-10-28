@@ -7,16 +7,18 @@ packages to install, shipped as a Claude Code plugin.
 
 ## Install
 1. Install Python 3.10 or newer (see [Python](#python) below).
-2. In Claude Code (v2.1.275 or later):
+2. In a terminal (Claude Code v2.1.292 or later):
    ```text
-   /plugin install ccm --marketplace BenBellborn/claude-code-monitor
+   claude plugin install ccm --marketplace BenBellborn/claude-code-monitor
    ```
-   On older versions, run the two steps:
+   This installs for your user, so the monitor runs in every project. On older versions, run in Claude Code:
    ```text
    /plugin marketplace add BenBellborn/claude-code-monitor
    /plugin install ccm@claude-code-monitor
    ```
-3. Start a new session. The monitor window opens.
+   and pick **user scope**.
+3. Send a prompt in any session, or start a new one. The monitor window opens. Close it, and it stays closed until the next
+   session.
 
 **Updates:** turn on auto-update once: `/plugin` > **Marketplaces** > `claude-code-monitor` > **Enable auto-update**. Without it,
 update by hand with `/plugin marketplace update claude-code-monitor`. The running monitor keeps the old version until you close its

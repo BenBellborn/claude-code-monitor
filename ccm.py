@@ -712,10 +712,28 @@ def claim_single_instance(reloaded):
     return True
 
 
+STARTED_SESSIONS = CACHE / "ccm-started-sessions.txt"
+
+
+def claim_hook_start():
+    """False for a prompt hook in a session the monitor already started for, so a closed window stays closed until the
+    next session. No hook fires on plugin install; the first prompt after it starts the monitor."""
+    event = json.loads(sys.stdin.read() or "{}")
+    session = str(event.get("session_id", ""))
+    started = STARTED_SESSIONS.read_text().split() if STARTED_SESSIONS.exists() else []
+    if session in started:
+        return event.get("hook_event_name") != "UserPromptSubmit"
+    CACHE.mkdir(parents=True, exist_ok=True)
+    STARTED_SESSIONS.write_text("\n".join((started + [session])[-200:]))
+    return True
+
+
 if __name__ == "__main__":
     # Start again detached and return, so the session start hook and `! python ccm.py` in Claude Code return at once and
     # the monitor outlives them. On Windows it runs as pythonw.exe, without a console window.
     if os.environ.get("CCM_DETACHED") != "1":
+        if "--hook" in sys.argv and not claim_hook_start():
+            sys.exit(0)
         pythonw = Path(sys.executable).with_name("pythonw.exe")
         exe = str(pythonw) if sys.platform == "win32" and pythonw.exists() else sys.executable
         subprocess.Popen([exe, str(SCRIPT), *sys.argv[1:]], env={**os.environ, "CCM_DETACHED": "1"}, **DETACHED)
