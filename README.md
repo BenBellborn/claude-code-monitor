@@ -62,12 +62,17 @@ Check with `python3 --version` (Mac, Linux) or `python --version` (Windows).
 
 ## 5h and 7d pills
 Claude Code passes the rate limits only to the statusline command, never to a file. The monitor runs your statusline itself, so to
-show 5h and 7d your statusline script has to save them. In a bash statusline that reads its input into `$input` (needs `jq`), add:
+show 5h and 7d your statusline script has to save them. Paste this prompt into Claude Code:
 
-```bash
+```text
+Edit the script my statusLine.command in ~/.claude/settings.json runs. Right after it reads the JSON input from stdin, add this,
+adapted to the script's language and its input variable (the bash version needs jq):
+
 # Rate limits reach only the statusline; saved for ccm.py.
 limits=$(echo "$input" | jq -c '.rate_limits // empty')
 [ -n "$limits" ] && echo "$limits" > "$HOME/.claude/cache/rate-limits.json.$$" && mv -f "$HOME/.claude/cache/rate-limits.json.$$" "$HOME/.claude/cache/rate-limits.json"
+
+Keep the write-to-temp-then-rename, so ccm.py never reads a half-written file. Change nothing else.
 ```
 
 The statusline output is split on ` | `. A part that starts with `5h:` or `7d:`, or holds `rtk ` or `codemap `, goes to the pills;
