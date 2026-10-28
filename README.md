@@ -7,14 +7,20 @@ packages to install, shipped as a Claude Code plugin.
 
 ## Install
 1. Install Python 3.10 or newer (see [Python](#python) below).
-2. In Claude Code:
+2. In Claude Code (v2.1.275 or later):
+   ```text
+   /plugin install ccm --marketplace BenBellborn/claude-code-monitor
+   ```
+   On older versions, run the two steps:
    ```text
    /plugin marketplace add BenBellborn/claude-code-monitor
    /plugin install ccm@claude-code-monitor
    ```
 3. Start a new session. The monitor window opens.
 
-Update with `/plugin marketplace update claude-code-monitor`. The running monitor keeps the old version until you close its window.
+**Updates:** turn on auto-update once: `/plugin` > **Marketplaces** > `claude-code-monitor` > **Enable auto-update**. Without it,
+update by hand with `/plugin marketplace update claude-code-monitor`. The running monitor keeps the old version until you close its
+window.
 
 ## What it shows
 - **Title bar:** `🟢 2 ⛔ 1`, sessions running and sessions waiting on you (blocked or idle).
@@ -80,6 +86,8 @@ is fine: the footer then shows only tool calls and tokens.
 - **Nothing opens:** a monitor is still running. Close its window, or stop it, and start a new session.
 - **Window turns blank:** it opened while the monitor was restarting. On Windows the monitor replaces it within 6 s; F5 always works.
 - **No footer:** check that your `statusLine.command` runs in bash, and that `jq` is installed if your script uses it.
+- **Install or update fails with a git error:** without a GitHub SSH key, set the environment variable
+  `CLAUDE_CODE_PLUGIN_PREFER_HTTPS=1` so Claude Code clones over HTTPS, then try again.
 - **Nothing at all:** run `python3 --version` or `python --version`; the plugin needs one of them on the PATH.
 
 ## License

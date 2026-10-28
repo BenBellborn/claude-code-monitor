@@ -1,6 +1,5 @@
 {
   "name": "ccm",
-  "version": "1.0.0",
   "description": "A live window with one card per Claude Code session: what it runs, if it waits on you, its statusline.",
   "author": { "name": "Ben Bellborn" },
   "repository": "https://github.com/BenBellborn/claude-code-monitor",
