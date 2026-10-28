@@ -700,17 +700,34 @@ def start_reloaded_server(port):
 
 def claim_single_instance(reloaded):
     """True when no other monitor runs; a session start hook runs this on every session. The claim lives as long as the
-    process. A restart after an edit takes it over from the process it replaces."""
+    process. A restart after an edit takes it over from the process it replaces. A monitor whose window just closed holds
+    the claim until it exits, so a session started in that time waits for it instead of leaving no monitor."""
+    deadline = time.time() + NO_VIEWER_EXIT_SECONDS + 5
+    while not try_claim_instance(reloaded):
+        if time.time() > deadline:
+            return False
+        time.sleep(1)
+    return True
+
+
+def try_claim_instance(reloaded):
     global instance_lock
     if sys.platform == "win32":
-        ctypes.WinDLL("kernel32", use_last_error=True).CreateMutexW(None, False, "Local\\cc_monitor")
-        return reloaded or ctypes.get_last_error() != 183  # ERROR_ALREADY_EXISTS
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.CreateMutexW.restype = ctypes.c_void_p
+        handle = kernel32.CreateMutexW(None, False, "Local\\cc_monitor")
+        if reloaded or ctypes.get_last_error() != 183:  # ERROR_ALREADY_EXISTS
+            return True
+        # An open handle keeps the mutex alive after the other monitor exits.
+        kernel32.CloseHandle(ctypes.c_void_p(handle))
+        return False
     import fcntl
     instance_lock = open(CACHE / "ccm.lock", "w")
     try:
         # The replaced process exits right after starting this one, so a restart waits for its lock.
         fcntl.flock(instance_lock, fcntl.LOCK_EX if reloaded else fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError:
+        instance_lock.close()
         return False
     return True
 
