@@ -217,6 +217,9 @@ def get_sessions():
             continue
         if datetime.fromtimestamp(s.get("updatedAt", 0) / 1000).date() != today:
             continue
+        # A spare is a background session started ahead of a job; it has no prompt or transcript yet.
+        if s.get("spare"):
+            continue
         transcript = next(PROJECTS_DIR.glob(f"*/{s['sessionId']}.jsonl"), None)
         entries = read_tail(transcript) if transcript else []
         model, effort = find_model_effort(entries)
