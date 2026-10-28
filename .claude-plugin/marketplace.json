@@ -1,6 +1,7 @@
 {
   "name": "claude-code-monitor",
   "owner": { "name": "Ben Bellborn" },
+  "description": "Claude Code Monitor: a live window that shows every Claude Code session at a glance.",
   "plugins": [
     {
       "name": "ccm",
