@@ -85,6 +85,24 @@ is fine: the footer then shows only tool calls and tokens.
 - Remove: `/plugin uninstall ccm@claude-code-monitor`, then delete `~/.claude/cache/cc-monitor-statuslines.json` and
   `~/.claude/cache/ccm.lock`.
 
+Or paste one of these prompts into Claude Code.
+
+Stop:
+```text
+Stop the Claude Code Monitor: end the process running ccm.py (on Windows the pythonw.exe running it, on Mac and Linux
+pkill -f ccm.py). Leave the plugin installed.
+```
+
+Remove:
+```text
+Remove the Claude Code Monitor completely:
+1. Stop the process running ccm.py (on Windows the pythonw.exe running it, on Mac and Linux pkill -f ccm.py).
+2. Run claude plugin uninstall ccm@claude-code-monitor, then claude plugin marketplace remove claude-code-monitor.
+3. Delete ~/.claude/cache/cc-monitor-statuslines.json, ~/.claude/cache/ccm.lock and ~/.claude/cache/rate-limits.json.
+4. If the script my statusLine.command runs saves rate_limits to rate-limits.json "for ccm.py", remove those lines.
+   Change nothing else in it.
+```
+
 ## Troubleshooting
 - **Nothing opens:** a monitor is still running. Close its window, or stop it, and start a new session.
 - **Window turns blank:** it opened while the monitor was restarting. On Windows the monitor replaces it within 6 s; F5 always works.
