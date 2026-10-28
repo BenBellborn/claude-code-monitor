@@ -1,0 +1,11 @@
+{
+  "name": "claude-code-monitor",
+  "owner": { "name": "Ben Bellborn" },
+  "plugins": [
+    {
+      "name": "ccm",
+      "source": "./",
+      "description": "A live window with one card per Claude Code session: what it runs, if it waits on you, its statusline."
+    }
+  ]
+}
