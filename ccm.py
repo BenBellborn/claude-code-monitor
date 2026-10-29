@@ -41,8 +41,6 @@ SCRIPT = Path(__file__).resolve()
 CACHE = Path.home() / ".claude" / "cache"
 # The script's modified time at start: the page reloads when the server it talks to has another one.
 VERSION = str(SCRIPT.stat().st_mtime_ns)
-# Bytes read from the end of a transcript; the last model, effort and prompt sit near the end.
-TAIL_BYTES = 512 * 1024
 # Longest prompt or activity text shown, so a row stays on one line.
 # Tool arguments that best name what a call does, in order of preference (same as the agent-models mod).
 ACTIVITY_KEYS = ["description", "file_path", "pattern", "command", "url", "query", "prompt"]
@@ -52,51 +50,16 @@ GENERIC_TYPES = {"general-purpose"}
 PATH = re.compile(r"""(?<![^\s"'=(])(?:(?:[A-Za-z]:|~|\.{1,2})?[\\/](?:[^\s\\/"'`]+[\\/])*|(?:[^\s\\/"'`]+[\\/]){2,})([^\s\\/"'`]*)""")
 
 
-def read_tail(path):
-    """Parsed JSON lines from the end of a transcript, oldest first."""
-    try:
-        with open(path, "rb") as f:
-            f.seek(0, 2)
-            size = f.tell()
-            f.seek(max(0, size - TAIL_BYTES))
-            lines = f.read().decode("utf-8", "replace").splitlines()
-    except OSError:
-        return []
-    if size > TAIL_BYTES:
-        lines = lines[1:]
-    entries = []
-    for line in lines:
-        try:
-            entries.append(json.loads(line))
-        except ValueError:
-            pass
-    return entries
-
-
 def shorten(text):
     text = PATH.sub(lambda m: m.group(1), text.split("\n")[0])
     return text
 
 
-def find_model_effort(entries):
-    for e in reversed(entries):
-        if e.get("type") == "assistant":
-            return e["message"].get("model", "?"), e.get("effort", "?")
-    return "?", "?"
-
-
-def find_activity(entries):
-    """The subagent's last tool call, as the agent-models mod shows it."""
-    for e in reversed(entries):
-        if e.get("type") != "assistant":
-            continue
-        for block in reversed(e["message"].get("content", [])):
-            if block.get("type") != "tool_use" or block.get("name") in SILENT_TOOLS:
-                continue
-            args = block.get("input", {})
-            key = next((k for k in ACTIVITY_KEYS if isinstance(args.get(k), str) and args[k]), None)
-            return shorten(f"{block['name']}: {args[key]}") if key else block["name"]
-    return None
+def format_activity(block):
+    """A tool call as the agent-models mod shows it."""
+    args = block.get("input", {})
+    key = next((k for k in ACTIVITY_KEYS if isinstance(args.get(k), str) and args[k]), None)
+    return shorten(f"{block['name']}: {args[key]}") if key else block["name"]
 
 
 def find_running_task(totals):
@@ -126,10 +89,9 @@ def is_prompt(entry):
     return entry.get("type") == "user" and (entry.get("origin") or {}).get("kind") == "human"
 
 
-def find_turn_progress(entries, totals):
+def find_turn_progress(totals):
     """Current tool call, elapsed time and tool call count of the turn since the last prompt."""
-    activity = find_activity(entries)
-    progress = [activity] if activity else []
+    progress = [totals["activity"]] if totals["activity"] else []
     if totals["turn_start"]:
         begun = datetime.fromisoformat(totals["turn_start"].replace("Z", "+00:00"))
         elapsed = int((datetime.now(begun.tzinfo) - begun).total_seconds())
@@ -141,27 +103,25 @@ def format_tokens(n):
     return f"{n / 1e6:.1f}M" if n >= 1e6 else f"{n / 1e3:.0f}k"
 
 
-def find_context_tokens(entries):
-    for e in reversed(entries):
-        if e.get("type") == "assistant":
-            u = e["message"].get("usage", {})
-            return u.get("input_tokens", 0) + u.get("cache_creation_input_tokens", 0) + u.get("cache_read_input_tokens", 0)
-    return 0
-
-
-# Per transcript: bytes read so far, message ids counted, token totals, and the current turn's start and tool calls.
+# Per transcript: bytes read so far, message ids counted, token totals, the current turn's start and tool calls, and the last
+# reply's model, effort, context size and tool call.
 transcript_totals = {}
 
 
 def scan_transcript(transcript):
-    """Session token totals and current turn counters, reading only what was appended since the last call."""
+    """Session token totals, current turn counters and last reply, reading only what was appended since the last call."""
     totals = transcript_totals.setdefault(
         transcript,
-        {"offset": 0, "seen": set(), "in": 0, "out": 0, "turn_start": None, "turn_calls": 0, "turn_prompt": "", "turn_skill": None},
+        {"offset": 0, "seen": set(), "in": 0, "out": 0, "turn_start": None, "turn_calls": 0, "turn_prompt": "", "turn_skill": None,
+         "model": "?", "effort": "?", "context": 0, "activity": None},
     )
-    with open(transcript, "rb") as f:
-        f.seek(totals["offset"])
-        data = f.read()
+    # A subagent's transcript may not exist yet.
+    try:
+        with open(transcript, "rb") as f:
+            f.seek(totals["offset"])
+            data = f.read()
+    except OSError:
+        return totals
     # A line still being written stays for the next call.
     complete = data[: data.rfind(b"\n") + 1]
     totals["offset"] += len(complete)
@@ -173,17 +133,24 @@ def scan_transcript(transcript):
         if is_prompt(e):
             totals.update(turn_start=e.get("timestamp"), turn_calls=0, turn_prompt=read_prompt_text(e), turn_skill=None)
         message = e.get("message") if e.get("type") == "assistant" else None
-        if not message:
+        # API errors and limit notices are written as synthetic replies with no model, effort or usage of their own.
+        if not message or e.get("isApiErrorMessage") or message.get("model") == "<synthetic>":
             continue
+        totals.update(model=message.get("model", "?"), effort=e.get("effort", "?"))
         if e.get("attributionSkill"):
             totals["turn_skill"] = e["attributionSkill"]
-        totals["turn_calls"] += sum(b.get("type") == "tool_use" for b in message.get("content", []))
+        for block in message.get("content", []):
+            if block.get("type") == "tool_use":
+                totals["turn_calls"] += 1
+                if block.get("name") not in SILENT_TOOLS:
+                    totals["activity"] = format_activity(block)
         # A reply with several content blocks is written once per block, each with the same usage.
         if message.get("id") in totals["seen"]:
             continue
         totals["seen"].add(message.get("id"))
         u = message.get("usage", {})
-        totals["in"] += u.get("input_tokens", 0) + u.get("cache_creation_input_tokens", 0) + u.get("cache_read_input_tokens", 0)
+        totals["context"] = u.get("input_tokens", 0) + u.get("cache_creation_input_tokens", 0) + u.get("cache_read_input_tokens", 0)
+        totals["in"] += totals["context"]
         totals["out"] += u.get("output_tokens", 0)
     return totals
 
@@ -197,14 +164,13 @@ def get_active_subagents(transcript):
             continue
         if meta.get("finished"):
             continue
-        entries = read_tail(meta_path.with_name(meta_path.name.replace(".meta.json", ".jsonl")))
-        model, effort = find_model_effort(entries)
+        totals = scan_transcript(meta_path.with_name(meta_path.name.replace(".meta.json", ".jsonl")))
         agent_type = meta.get("agentType", "")
         agents.append({
-            "model": model,
-            "effort": effort,
+            "model": totals["model"],
+            "effort": totals["effort"],
             "type": "" if agent_type in GENERIC_TYPES else agent_type,
-            "activity": find_activity(entries) or meta.get("description", ""),
+            "activity": totals["activity"] or meta.get("description", ""),
         })
     return agents
 
@@ -223,14 +189,13 @@ def get_sessions():
         if s.get("spare"):
             continue
         transcript = next(PROJECTS_DIR.glob(f"*/{s['sessionId']}.jsonl"), None)
-        entries = read_tail(transcript) if transcript else []
-        model, effort = find_model_effort(entries)
+        totals = scan_transcript(transcript) if transcript else {"model": "?", "effort": "?"}
+        model, effort = totals["model"], totals["effort"]
         status = s.get("status")
         progress, footer = [], []
         if transcript:
-            totals = scan_transcript(transcript)
             if status == "busy":
-                progress = find_turn_progress(entries, totals)
+                progress = find_turn_progress(totals)
                 footer.append(f"{totals['turn_calls']} tool calls")
             footer.append(f"{format_tokens(totals['in'])} in / {format_tokens(totals['out'])} out")
             statusline_inputs[s["sessionId"]] = {
@@ -238,7 +203,7 @@ def get_sessions():
                 "transcript_path": str(transcript),
                 "cwd": s.get("cwd", ""),
                 "model": model,
-                "context_tokens": find_context_tokens(entries),
+                "context_tokens": totals["context"],
             }
         task = find_running_task(totals) if transcript else ""
         detail, highlight = task, bool(task)
