@@ -96,6 +96,17 @@ def test_statusline_runs_in_session_cwd():
     assert ccm.statuslines["s"] == ["sessiondir"], ccm.statuslines["s"]
 
 
+def test_failed_start_gives_no_output():
+    spec = importlib.util.spec_from_file_location("ccm", CCM_PATH)
+    ccm = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(ccm)
+    bash = ccm.get_git_bash()
+    assert ccm.run_statusline_command(bash, "cat", "{}", "") == "{}"
+    assert ccm.run_statusline_command(str(Path(tempfile.mkdtemp()) / "no-bash"), "cat", "{}", "") == "", "missing bash"
+    assert ccm.run_statusline_command(bash, "echo \0x", "{}", "") == "", "NUL in command"
+    assert ccm.run_statusline_command(bash, "cat", "{}", str(Path(tempfile.mkdtemp()) / "gone")) == "", "missing cwd"
+
+
 def test_timeout_returns_while_a_grandchild_holds_stdout():
     spec = importlib.util.spec_from_file_location("ccm", CCM_PATH)
     ccm = importlib.util.module_from_spec(spec)

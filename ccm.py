@@ -376,9 +376,10 @@ def run_statusline_command(bash, command, text, cwd):
             [bash, "-c", command], cwd=cwd or None, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
             encoding="utf-8", errors="replace", creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), start_new_session=True,
         )
-        job = add_to_new_job(process) if sys.platform == "win32" else None
-    except Exception:
+    # ValueError: a NUL in the command.
+    except (OSError, ValueError, subprocess.SubprocessError):
         return ""
+    job = add_to_new_job(process) if sys.platform == "win32" else None
     try:
         return process.communicate(text, timeout=10)[0] or ""
     except subprocess.TimeoutExpired:
@@ -389,7 +390,7 @@ def run_statusline_command(bash, command, text, cwd):
         process.kill()
         process.communicate()
         return ""
-    except Exception:
+    except (OSError, subprocess.SubprocessError):
         return ""
     finally:
         if job:
