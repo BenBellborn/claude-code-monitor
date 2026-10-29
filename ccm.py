@@ -459,7 +459,7 @@ def build_usage_pills():
     return '<p class="usage">' + "".join(f'<span class="pill">{p}</span>' for p in global_parts) + '</p>' if global_parts else ""
 
 
-# Most agent rows each card has shown; cards pad to it so they grow but never shrink until the script restarts.
+# Most agent rows each card has shown since its session was last idle with no agents; cards pad to it so they never shrink mid-turn.
 max_agent_rows = {}
 # Scans, agent row counts and titles are read-modify-written; every request thread updates them.
 render_lock = threading.Lock()
@@ -471,6 +471,8 @@ def update_sessions():
     with render_lock:
         sessions = get_sessions()
         for s in sessions:
+            if s["color"] == "idle" and not s["agents"]:
+                max_agent_rows.pop(s["key"], None)
             max_agent_rows[s["key"]] = max(max_agent_rows.get(s["key"], 0), len(s["agents"]))
             s["agent_rows"] = max_agent_rows[s["key"]]
         title = build_title(sessions)
@@ -545,12 +547,13 @@ PAGE = """<!DOCTYPE html>
     <div id="sessions">__SESSIONS__</div>
     <p class="note" id="note"></p>
     <script>
-        // A card never shrinks: each keeps the tallest height it has had.
+        // A card never shrinks mid-turn: each keeps the tallest height it has had since its session was last idle with no agents.
         const maxHeights = {};
         function lockCardHeights() {
             for (const card of document.querySelectorAll(".card[data-key]")) {
                 card.style.minHeight = "";
                 const key = card.dataset.key;
+                if (card.classList.contains("idle") && !card.querySelector(".agent")) delete maxHeights[key];
                 maxHeights[key] = Math.max(maxHeights[key] || 0, card.offsetHeight);
                 card.style.minHeight = maxHeights[key] + "px";
             }
