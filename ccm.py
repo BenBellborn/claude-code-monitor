@@ -369,6 +369,27 @@ def read_json(path):
         return None
 
 
+def run_statusline_command(bash, command, text):
+    """The statusLine command's output for one session's JSON; empty when the run fails in any way, since command and output are the user's."""
+    try:
+        return subprocess.run(
+            [bash, "-c", command], input=text, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=10,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        ).stdout or ""
+    except Exception:
+        return ""
+
+
+def save_statuslines(lines, shared):
+    # Written aside and renamed: a restart or window-close exit from another thread mid-write would leave an empty cache.
+    temp = STATUSLINE_CACHE.with_name(STATUSLINE_CACHE.name + ".tmp")
+    try:
+        temp.write_text(json.dumps({"sessions": lines, "shared": shared}), encoding="utf-8")
+        os.replace(temp, STATUSLINE_CACHE)
+    except OSError:
+        pass
+
+
 def run_statuslines():
     """Runs the settings.json statusLine command for every session every 10 s and stores its parts."""
     global global_parts
@@ -384,32 +405,22 @@ def run_statuslines():
         settings = read_json(CLAUDE_DIR / "settings.json")
         status_line = settings.get("statusLine") if isinstance(settings, dict) else None
         command = status_line.get("command") if isinstance(status_line, dict) else None
+        has_command = isinstance(command, str) and bool(command.strip())
         limits = read_json(CACHE / "rate-limits.json")
+        lines, shared = {}, []
         # ponytail: one run per session every 10 s (jq and git forks each); per render would start ~15 processes per second.
-        for key, info in list(statusline_inputs.items()) if isinstance(command, str) and command.strip() else []:
-            # The command and its output are the user's; a run that fails in any way keeps the last line: stale beats empty.
-            try:
-                out = subprocess.run(
-                    [bash, "-c", command], input=json.dumps(build_statusline_input(info, limits if isinstance(limits, dict) else None)),
-                    capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=10,
-                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-                ).stdout or ""
-                parts = [p for p in out.strip().split(" | ") if p.strip()]
-                shared = [render_ansi(p) for p in parts if GLOBAL_PART.search(ANSI.sub("", p))]
-                own = [render_ansi(p) for p in parts if not GLOBAL_PART.search(ANSI.sub("", p))]
-            except Exception:
-                continue
-            if own:
-                statuslines[key] = own
-            if shared:
-                global_parts = shared
-        # Written aside and renamed: a restart or window-close exit from another thread mid-write would leave an empty cache.
-        temp = STATUSLINE_CACHE.with_name(STATUSLINE_CACHE.name + ".tmp")
-        try:
-            temp.write_text(json.dumps({"sessions": statuslines, "shared": global_parts}), encoding="utf-8")
-            os.replace(temp, STATUSLINE_CACHE)
-        except OSError:
-            pass
+        for key, info in list(statusline_inputs.items()) if has_command else []:
+            text = json.dumps(build_statusline_input(info, limits if isinstance(limits, dict) else None))
+            parts = [p for p in run_statusline_command(bash, command, text).strip().split(" | ") if p.strip()]
+            lines[key] = [render_ansi(p) for p in parts if not GLOBAL_PART.search(ANSI.sub("", p))]
+            shared = [render_ansi(p) for p in parts if GLOBAL_PART.search(ANSI.sub("", p))]
+        if not has_command:
+            statuslines.clear()
+        statuslines.update(lines)
+        # No session to run for yet (the first pass beats the first render): the pills and the cache from before a restart stay.
+        if lines or not has_command:
+            global_parts = shared
+            save_statuslines(lines, shared)
         time.sleep(10)
 
 
