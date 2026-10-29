@@ -570,7 +570,7 @@ class MonitorHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "text/event-stream")
         self.send_header("Cache-Control", "no-cache")
         self.end_headers()
-        global last_viewer
+        global missed_heartbeats
         last = None
         # ponytail: re-reads the session files every second; a file watcher if that ever costs too much.
         try:
@@ -580,7 +580,7 @@ class MonitorHandler(BaseHTTPRequestHandler):
                 self.wfile.write(f"data: {json.dumps(current)}\n\n".encode("utf-8") if current != last else b":\n\n")
                 self.wfile.flush()
                 last = current
-                last_viewer = time.time()
+                missed_heartbeats = 0
                 time.sleep(1)
         except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
             pass
@@ -608,15 +608,18 @@ def restart_on_new_version(port):
         os._exit(0)
 
 
-last_viewer = time.time()
+# Counted in 1 s ticks, not wall-clock time: a clock jump (resume from sleep, NTP step) must not end a viewed monitor.
+missed_heartbeats = 0
 NO_VIEWER_EXIT_SECONDS = 20
 
 
 def exit_when_window_closed():
     """Closing the window stops the monitor, so the next session start opens a new one."""
+    global missed_heartbeats
     while True:
         time.sleep(1)
-        if time.time() - last_viewer > NO_VIEWER_EXIT_SECONDS:
+        missed_heartbeats += 1
+        if missed_heartbeats > NO_VIEWER_EXIT_SECONDS:
             os._exit(0)
 
 
@@ -702,12 +705,11 @@ def claim_single_instance(reloaded):
     """True when no other monitor runs; a session start hook runs this on every session. The claim lives as long as the
     process. A restart after an edit takes it over from the process it replaces. A monitor whose window just closed holds
     the claim until it exits, so a session started in that time waits for it instead of leaving no monitor."""
-    deadline = time.time() + NO_VIEWER_EXIT_SECONDS + 5
-    while not try_claim_instance(reloaded):
-        if time.time() > deadline:
-            return False
+    for _ in range(NO_VIEWER_EXIT_SECONDS + 5):
+        if try_claim_instance(reloaded):
+            return True
         time.sleep(1)
-    return True
+    return False
 
 
 def try_claim_instance(reloaded):
