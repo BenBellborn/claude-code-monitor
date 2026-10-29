@@ -188,7 +188,9 @@ def get_sessions():
             s = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             continue
-        if datetime.fromtimestamp(s.get("updatedAt", 0) / 1000).date() != today:
+        # updatedAt moves only on a status change, so a session busy or waiting since before midnight stays.
+        status = s.get("status")
+        if status not in ("busy", "waiting") and datetime.fromtimestamp(s.get("updatedAt", 0) / 1000).date() != today:
             continue
         # A spare is a background session started ahead of a job; it has no prompt or transcript yet.
         if s.get("spare"):
@@ -196,7 +198,6 @@ def get_sessions():
         transcript = next(PROJECTS_DIR.glob(f"*/{s['sessionId']}.jsonl"), None)
         totals = scan_transcript(transcript) if transcript else {"model": "?", "effort": "?"}
         model, effort = totals["model"], totals["effort"]
-        status = s.get("status")
         progress, footer = [], []
         if transcript:
             if status == "busy":
