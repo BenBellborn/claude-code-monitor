@@ -18,6 +18,8 @@ CLAUDE_DIR = Path.home() / ".claude"
 SESSIONS_DIR = CLAUDE_DIR / "sessions"
 PROJECTS_DIR = CLAUDE_DIR / "projects"
 FIRST_PORT = 8080
+# The window URL must name the address the server binds: "localhost" may resolve to ::1 first and reach another app there.
+HOST = "127.0.0.1"
 # Chromium browsers that open a page as its own app window; the first one found is used, else a tab in the default browser.
 APP_BROWSERS = [
     r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
@@ -552,7 +554,7 @@ class MonitorHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         # A foreign Host is a DNS-rebinding page reaching 127.0.0.1; it must not read the sessions.
         port = self.server.server_address[1]
-        if self.headers.get("Host") not in (f"localhost:{port}", f"127.0.0.1:{port}"):
+        if self.headers.get("Host") not in (f"{HOST}:{port}", f"localhost:{port}"):
             self.send_error(403)
             return
         if self.path == "/events":
@@ -644,7 +646,7 @@ recent_titles = deque(maxlen=5)
 
 
 def open_monitor_window(port):
-    url = f"http://localhost:{port}/"
+    url = f"http://{HOST}:{port}/"
     browser = next((b for b in APP_BROWSERS if Path(b).is_file() or (os.sep not in b and shutil.which(b))), None)
     if not browser:
         webbrowser.open_new_tab(url)
@@ -663,7 +665,7 @@ def pin_monitor_window(port):
     no_move_size_activate = 0x0001 | 0x0002 | 0x0010
     wm_close = 0x0010
     # An app window whose page failed to load has the bare host as its title; that page has no script to retry.
-    error_title = f"localhost:{port}"
+    error_title = f"{HOST}:{port}"
     error_checks = {}
 
     def pin(hwnd, _):
@@ -701,7 +703,7 @@ def start_free_server():
     """Binds the first free port from FIRST_PORT on."""
     for port in range(FIRST_PORT, FIRST_PORT + 100):
         try:
-            return MonitorServer(("127.0.0.1", port), MonitorHandler)
+            return MonitorServer((HOST, port), MonitorHandler)
         except OSError:
             continue
     raise OSError(f"No free port in {FIRST_PORT}-{FIRST_PORT + 99}")
@@ -711,10 +713,10 @@ def start_reloaded_server(port):
     """Binds the port the open window uses, waiting for the older process to let it go."""
     for _ in range(40):
         try:
-            return MonitorServer(("127.0.0.1", port), MonitorHandler)
+            return MonitorServer((HOST, port), MonitorHandler)
         except OSError:
             time.sleep(0.25)
-    return MonitorServer(("127.0.0.1", port), MonitorHandler)
+    return MonitorServer((HOST, port), MonitorHandler)
 
 
 def claim_single_instance():
@@ -808,7 +810,7 @@ if __name__ == "__main__":
             sys.exit(0)
     server = start_reloaded_server(reloaded_port) if reloaded else start_free_server()
     port = server.server_address[1]
-    print(f"Claude Monitor running at http://localhost:{port}")
+    print(f"Claude Monitor running at http://{HOST}:{port}")
     print("Press Ctrl+C to stop.")
     if not reloaded:
         open_monitor_window(port)
