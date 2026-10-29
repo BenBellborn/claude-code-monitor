@@ -76,6 +76,9 @@ limits=$(echo "$input" | jq -c '.rate_limits // empty')
 Keep the write-to-temp-then-rename, so ccm.py never reads a half-written file. Change nothing else.
 ```
 
+The monitor runs this script too, with the limits it last read, so the file can briefly hold slightly older limits until Claude
+Code's next statusline run.
+
 The statusline output is split on ` | `. A part that starts with `5h:` or `7d:`, or holds `rtk ` or `codemap `, goes to the pills;
 every other part goes to the card footer. Model and effort are left out, since the card header shows them. No statusline at all
 is fine: the footer then shows only tool calls and tokens.
