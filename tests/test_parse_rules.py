@@ -56,7 +56,7 @@ def test_running_task_is_the_skill_else_the_whole_command_else_the_short_prompt(
 
 def test_label_sessions_keeps_the_working_one_and_prefixes_clashing_folders():
     def session(cwd, color, updated):
-        return {"cwd": cwd, "name": Path(cwd).name, "color": color, "updated": updated}
+        return {"cwd": cwd, "name": Path(cwd).name, "dedupe": Path(cwd).name, "color": color, "updated": updated}
 
     working = session("C:/a/proj", "working", 1)
     kept = ccm.label_sessions([working, session("C:/a/proj", "idle", 2), session("C:/b/proj", "idle", 1)])

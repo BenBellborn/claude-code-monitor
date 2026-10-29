@@ -243,11 +243,16 @@ def find_session(s, today):
     task = build_running_task(totals) if transcript else ""
     detail, highlight = task, bool(task)
     color = {"busy": "working", "waiting": "waiting"}.get(status, "idle")
+    name = s.get("name")
+    # A copied background session is named "ARC (2)": the number is dropped so it matches its original.
+    if name and s.get("kind") == "bg":
+        name = re.sub(r"\s*\(\d+\)$", "", name)
     return {
         "key": s["sessionId"],
         "cwd": cwd,
-        # A copied session is named "ARC (2)": the number is dropped so it matches its original.
-        "name": re.sub(r"\s*\(\d+\)$", "", s.get("name") or Path(cwd).name),
+        "name": name or Path(cwd).name,
+        # Sessions in one folder merge only when they share a name; unnamed ones stay apart.
+        "dedupe": name or s["sessionId"],
         "updated": s.get("statusUpdatedAt") or s.get("updatedAt", 0),
         "model": model,
         "effort": str(effort),
@@ -266,7 +271,7 @@ def label_sessions(sessions):
     rank = lambda s: (s["color"] != "idle", s["updated"])
     newest = {}
     for s in sessions:
-        key = (s["cwd"].lower(), s["name"])
+        key = (s["cwd"].lower(), s["dedupe"])
         if key not in newest or rank(s) > rank(newest[key]):
             newest[key] = s
     kept = list(newest.values())
