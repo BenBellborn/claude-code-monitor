@@ -27,13 +27,11 @@ def stores_after_render(unreadable_session_file):
     (project / "live" / "subagents" / "agent-a.jsonl").write_text("")
     ccm.statusline_inputs["ended"] = {}
     ccm.statuslines["ended"] = ["old"]
-    ccm.max_agent_rows["ended"] = 1
     ccm.scan_transcript(project / "ended.jsonl")
     ccm.scan_transcript(project / "ended" / "subagents" / "agent-b.jsonl")
     ccm.update_sessions()
     return {
         "statusline_inputs": set(ccm.statusline_inputs), "statuslines": set(ccm.statuslines),
-        "max_agent_rows": set(ccm.max_agent_rows),
         "transcript_totals": {p.relative_to(project).as_posix() for p in ccm.transcript_totals},
     }
 
@@ -41,7 +39,7 @@ def stores_after_render(unreadable_session_file):
 def test_ended_session_leaves_no_keys_behind():
     stores = stores_after_render(unreadable_session_file=False)
     assert stores == {
-        "statusline_inputs": {"live"}, "statuslines": set(), "max_agent_rows": {"live"},
+        "statusline_inputs": {"live"}, "statuslines": set(),
         "transcript_totals": {"live.jsonl", "live/subagents/agent-a.jsonl"},
     }, f"stores keep ended sessions: {stores}"
 

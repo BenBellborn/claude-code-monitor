@@ -206,7 +206,7 @@ def get_sessions():
 def prune_session_stores(found, shown):
     """Drops what sessions no longer shown left in the per-session stores. A session hidden behind a namesake keeps its scans,
     so its transcripts are not read again from the start on every render."""
-    for store in (statusline_inputs, statuslines, max_agent_rows):
+    for store in (statusline_inputs, statuslines):
         for key in store.keys() - shown:
             store.pop(key, None)
     # A session's transcript is <id>.jsonl; its subagents' are <id>/subagents/<agent>.jsonl.
@@ -471,22 +471,14 @@ def build_usage_pills():
     return '<p class="usage">' + "".join(f'<span class="pill">{p}</span>' for p in global_parts) + '</p>' if global_parts else ""
 
 
-# Most agent rows each card has shown since its session was last idle with no agents; cards pad to it so they never shrink mid-turn.
-max_agent_rows = {}
-# Scans, agent row counts and titles are read-modify-written; every request thread updates them.
+# Scans and titles are read-modify-written; every request thread updates them.
 render_lock = threading.Lock()
 
 
 def update_sessions():
-    """Scans every session and records the agent rows and title the page shows next; returns the sessions to show, each with
-    the agent row count its card pads to."""
+    """Scans every session and records the title the page shows next; returns the sessions to show."""
     with render_lock:
         sessions = get_sessions()
-        for s in sessions:
-            if s["color"] == "idle" and not s["agents"]:
-                max_agent_rows.pop(s["key"], None)
-            max_agent_rows[s["key"]] = max(max_agent_rows.get(s["key"], 0), len(s["agents"]))
-            s["agent_rows"] = max_agent_rows[s["key"]]
         title = build_title(sessions)
         if not recent_titles or recent_titles[-1] != title:
             recent_titles.append(title)
@@ -497,13 +489,11 @@ def build_title_and_cards(sessions):
     """The tab title and the session cards' HTML."""
     cards = []
     for s in sessions:
-        rows = [
+        agents = "".join(
             f'<div class="agent">● {build_model_effort(a["model"], a["effort"])} - '
             f'{html.escape(a["type"]) + " - " if a["type"] else ""}{html.escape(a["activity"])}</div>'
             for a in s["agents"]
-        ]
-        rows += ['<div class="agent">&nbsp;</div>'] * (s["agent_rows"] - len(rows))
-        agents = "".join(rows)
+        )
         detail = html.escape(s["detail"])
         if s["highlight"]:
             detail = f'<span class="highlight">{detail}</span>'

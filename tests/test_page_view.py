@@ -24,7 +24,7 @@ def get(port, path):
     return r.read().decode()
 
 
-def test_page_and_events_show_cards_pills_and_padded_agent_rows():
+def test_page_and_events_show_cards_pills_and_agent_rows():
     spec = importlib.util.spec_from_file_location("ccm", CCM_PATH)
     ccm = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(ccm)
@@ -57,11 +57,11 @@ def test_page_and_events_show_cards_pills_and_padded_agent_rows():
         (sub / "agent-a.meta.json").write_text(json.dumps({"agentType": "verifier", "finished": True}))
         version, title, cards = get(port, "/events")
         assert (version, title) == (ccm.VERSION, "\U0001f7e2 1"), (version, title)
-        assert "verifier" not in cards and '<div class="agent">&nbsp;</div>' in cards, f"agent row not padded: {cards}"
+        assert "verifier" not in cards, f"finished agent still shown: {cards}"
         (ccm.SESSIONS_DIR / "1.json").write_text(json.dumps(
             {"sessionId": "s1", "cwd": "C:/x/proj", "status": "idle", "updatedAt": time.time() * 1000}))
         cards = get(port, "/events")[2]
-        assert '<div class="agent">' not in cards, f"idle card keeps its padded agent row: {cards}"
+        assert '<div class="agent">' not in cards, f"idle card with no agents shows an agent row: {cards}"
     finally:
         server.shutdown()
         server.server_close()
