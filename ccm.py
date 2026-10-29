@@ -370,12 +370,12 @@ def read_json(path):
         return None
 
 
-def run_statusline_command(bash, command, text):
+def run_statusline_command(bash, command, text, cwd):
     """The statusLine command's output for one session's JSON; empty when the run fails in any way, since command and output are the user's.
     A run past 10 s ends with every process it started: one left holding stdout would stall every footer and pill."""
     try:
         process = subprocess.Popen(
-            [bash, "-c", command], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
+            [bash, "-c", command], cwd=cwd or None, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
             encoding="utf-8", errors="replace", creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), start_new_session=True,
         )
         job = add_to_new_job(process) if sys.platform == "win32" else None
@@ -441,7 +441,7 @@ def run_statuslines():
         # ponytail: one run per session every 10 s (jq and git forks each); per render would start ~15 processes per second.
         for key, info in list(statusline_inputs.items()) if has_command else []:
             text = json.dumps(build_statusline_input(info, limits if isinstance(limits, dict) else None))
-            parts = [p for p in run_statusline_command(bash, command, text).strip().split(" | ") if p.strip()]
+            parts = [p for p in run_statusline_command(bash, command, text, info["cwd"]).strip().split(" | ") if p.strip()]
             lines[key] = []
             for part in parts:
                 match = GLOBAL_PART.search(ANSI.sub("", part))

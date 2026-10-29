@@ -23,7 +23,7 @@ def load(command, outputs):
         (tmp / "settings.json").write_text(json.dumps({"statusLine": {"command": command}}))
     calls = []
 
-    def run(bash, command, text):
+    def run(bash, command, text, cwd):
         session = json.loads(text)["session_id"]
         calls.append(session)
         return outputs[session]
@@ -74,12 +74,26 @@ def test_shared_parts_merge_across_sessions():
     assert ccm.global_parts == ["5h:20%", "rtk 50%, codemap 60%"], f"global_parts: {ccm.global_parts}"
 
 
+def test_statusline_runs_in_session_cwd():
+    spec = importlib.util.spec_from_file_location("ccm", CCM_PATH)
+    ccm = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(ccm)
+    tmp = Path(tempfile.mkdtemp())
+    ccm.CLAUDE_DIR = ccm.CACHE = tmp
+    ccm.STATUSLINE_CACHE = tmp / "cache.json"
+    (tmp / "settings.json").write_text(json.dumps({"statusLine": {"command": 'basename "$PWD"'}}))
+    (tmp / "sessiondir").mkdir()
+    ccm.statusline_inputs["s"] = {**info("s"), "cwd": str(tmp / "sessiondir")}
+    one_pass(ccm)
+    assert ccm.statuslines["s"] == ["sessiondir"], ccm.statuslines["s"]
+
+
 def test_timeout_returns_while_a_grandchild_holds_stdout():
     spec = importlib.util.spec_from_file_location("ccm", CCM_PATH)
     ccm = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(ccm)
     start = time.monotonic()
-    out = ccm.run_statusline_command(ccm.find_git_bash(), "sleep 25; echo x", "{}")
+    out = ccm.run_statusline_command(ccm.find_git_bash(), "sleep 25; echo x", "{}", "")
     elapsed = time.monotonic() - start
     assert (out, elapsed < 15) == ("", True), f"returned {out!r} after {elapsed:.1f} s"
 
