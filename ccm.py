@@ -12,6 +12,7 @@ import webbrowser
 from collections import deque
 from datetime import date, datetime
 from pathlib import Path
+from types import SimpleNamespace
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 
 CLAUDE_DIR = Path.home() / ".claude"
@@ -370,14 +371,42 @@ def read_json(path):
 
 
 def run_statusline_command(bash, command, text):
-    """The statusLine command's output for one session's JSON; empty when the run fails in any way, since command and output are the user's."""
+    """The statusLine command's output for one session's JSON; empty when the run fails in any way, since command and output are the user's.
+    A run past 10 s ends with every process it started: one left holding stdout would stall every footer and pill."""
     try:
-        return subprocess.run(
-            [bash, "-c", command], input=text, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=10,
-            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-        ).stdout or ""
+        process = subprocess.Popen(
+            [bash, "-c", command], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
+            encoding="utf-8", errors="replace", creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), start_new_session=True,
+        )
+        job = add_to_new_job(process) if sys.platform == "win32" else None
     except Exception:
         return ""
+    try:
+        return process.communicate(text, timeout=10)[0] or ""
+    except subprocess.TimeoutExpired:
+        if job:
+            job.kernel32.TerminateJobObject(job.handle, 1)
+        else:
+            os.killpg(process.pid, 9)
+        process.kill()
+        process.communicate()
+        return ""
+    except Exception:
+        return ""
+    finally:
+        if job:
+            job.kernel32.CloseHandle(job.handle)
+
+
+def add_to_new_job(process):
+    """A Windows job holding the process and every process it starts. MSYS fork and exec break the parent chain `taskkill /T` follows,
+    so only a job reaches a git or sleep that bash started."""
+    # ponytail: a child bash starts in the moment before the job takes it escapes; the run's own commands start well after.
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.CreateJobObjectW.restype = ctypes.c_void_p
+    handle = ctypes.c_void_p(kernel32.CreateJobObjectW(None, None))
+    kernel32.AssignProcessToJobObject(handle, ctypes.c_void_p(int(process._handle)))
+    return SimpleNamespace(kernel32=kernel32, handle=handle)
 
 
 def save_statuslines(lines, shared):

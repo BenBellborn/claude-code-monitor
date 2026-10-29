@@ -74,6 +74,16 @@ def test_shared_parts_merge_across_sessions():
     assert ccm.global_parts == ["5h:20%", "rtk 50%, codemap 60%"], f"global_parts: {ccm.global_parts}"
 
 
+def test_timeout_returns_while_a_grandchild_holds_stdout():
+    spec = importlib.util.spec_from_file_location("ccm", CCM_PATH)
+    ccm = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(ccm)
+    start = time.monotonic()
+    out = ccm.run_statusline_command(ccm.find_git_bash(), "sleep 25; echo x", "{}")
+    elapsed = time.monotonic() - start
+    assert (out, elapsed < 15) == ("", True), f"returned {out!r} after {elapsed:.1f} s"
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):
