@@ -31,14 +31,15 @@ window.
 - **Under the cards:** pills with the parts every session shares, for example `5h:34%->17:00`, `7d:34%->Mon 17:00`.
 
 ## How it behaves
-- Starts with every Claude Code session (a `SessionStart` hook). Only one runs at a time; a second start quits at once.
+- Starts with every Claude Code session and on a session's first prompt (`SessionStart` and `UserPromptSubmit` hooks). Only one runs
+  at a time; a second start waits up to 25 s for one whose window just closed, then quits.
 - Opens as its own app window (no tabs, no address bar) in Edge, Chrome or Chromium; without one of those, as a tab in your default
   browser.
 - Closing the window stops it (after 20 s). The next session start opens it again.
 - Listens on `127.0.0.1` only, on the first free port from 8080 to 8179.
 - Reads `~/.claude/sessions`, `~/.claude/projects` (transcripts), `~/.claude/settings.json` (`statusLine`) and `~/.claude/cache`. Writes
-  only to `~/.claude/cache`: the last statusline per session, so the cards are filled right after a restart, and a lock file on
-  Mac and Linux.
+  only to `~/.claude/cache`: the last statusline per session and the shared pills, so the cards are filled right after a restart, the
+  sessions it has started for, and a lock file on Mac and Linux.
 
 ## Needs
 - Claude Code. On Windows also Git for Windows, which Claude Code already needs; the monitor runs your statusline through its bash.
@@ -82,8 +83,8 @@ is fine: the footer then shows only tool calls and tokens.
 ## Stop or remove
 - Stop: close the window; the process exits within 20 s. By hand: on Windows end the `pythonw.exe` running `ccm.py` in Task Manager;
   on Mac and Linux run `pkill -f ccm.py`.
-- Remove: `/plugin uninstall ccm@claude-code-monitor`, then delete `~/.claude/cache/cc-monitor-statuslines.json` and
-  `~/.claude/cache/ccm.lock`.
+- Remove: `/plugin uninstall ccm@claude-code-monitor`, then delete these files in `~/.claude/cache`: `cc-monitor-statuslines.json`,
+  `cc-monitor-statuslines.json.tmp`, `ccm.lock`, `ccm-started-sessions.txt` and `ccm-started-sessions.lock`.
 
 Or paste one of these prompts into Claude Code.
 

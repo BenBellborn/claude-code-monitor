@@ -42,7 +42,6 @@ SCRIPT = Path(__file__).resolve()
 CACHE = Path.home() / ".claude" / "cache"
 # The script's modified time at start: the page reloads when the server it talks to has another one.
 VERSION = str(SCRIPT.stat().st_mtime_ns)
-# Longest prompt or activity text shown, so a row stays on one line.
 # Tool arguments that best name what a call does, in order of preference (same as the agent-models mod).
 ACTIVITY_KEYS = ["description", "file_path", "pattern", "command", "url", "query", "prompt"]
 SILENT_TOOLS = {"SubagentHandback"}
@@ -91,7 +90,6 @@ def is_prompt(entry):
 
 
 def find_turn_progress(totals):
-    """Current tool call, elapsed time and tool call count of the turn since the last prompt."""
     progress = [totals["activity"]] if totals["activity"] else []
     if totals["turn_start"]:
         begun = datetime.fromisoformat(totals["turn_start"].replace("Z", "+00:00"))
@@ -776,7 +774,7 @@ def start_reloaded_server(port):
 
 
 def claim_single_instance():
-    """True when no other monitor runs; a session start hook runs this on every session. The claim lives as long as the
+    """True once no other monitor holds the claim, waiting up to 25 s; a start that finds it taken runs this. The claim lives as long as the
     process and any process it was handed to. A monitor whose window just closed holds the claim until it exits, so a
     session started in that time waits for it instead of leaving no monitor."""
     for _ in range(NO_VIEWER_EXIT_SECONDS + 5):
@@ -863,7 +861,7 @@ def add_started_session(session):
 
 
 if __name__ == "__main__":
-    # Start again detached and return, so the session start hook and `! python ccm.py` in Claude Code return at once and
+    # Start again detached and return, so the hooks and `! python ccm.py` in Claude Code return at once and
     # the monitor outlives them. On Windows it runs as pythonw.exe, without a console window.
     if os.environ.get("CCM_DETACHED") != "1":
         env = {**os.environ, "CCM_DETACHED": "1"}
