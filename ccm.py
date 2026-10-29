@@ -612,8 +612,16 @@ def restart_on_new_version(port):
             print(f"New version not loaded: {e}")
             continue
         print("New version found, restarting.")
-        subprocess.Popen([sys.executable, str(SCRIPT), "--reloaded", str(port)])
+        start_with_instance_claim([sys.executable, str(SCRIPT), "--reloaded", str(port), str(instance_lock)])
         os._exit(0)
+
+
+def start_with_instance_claim(command):
+    """Starts a process that inherits this process's claim, so the claim outlives this process without a gap in which a
+    waiting monitor takes it. The command passes the claim's handle on, so the process can hand it over again."""
+    set_inheritable = os.set_handle_inheritable if sys.platform == "win32" else os.set_inheritable
+    set_inheritable(instance_lock, True)
+    return subprocess.Popen(command, close_fds=False)
 
 
 # Counted in 1 s ticks, not wall-clock time: a clock jump (resume from sleep, NTP step) must not end a viewed monitor.
@@ -709,36 +717,43 @@ def start_reloaded_server(port):
     return MonitorServer(("127.0.0.1", port), MonitorHandler)
 
 
-def claim_single_instance(reloaded):
+def claim_single_instance():
     """True when no other monitor runs; a session start hook runs this on every session. The claim lives as long as the
-    process. A restart after an edit takes it over from the process it replaces. A monitor whose window just closed holds
-    the claim until it exits, so a session started in that time waits for it instead of leaving no monitor."""
+    process and any process it was handed to. A monitor whose window just closed holds the claim until it exits, so a
+    session started in that time waits for it instead of leaving no monitor."""
     for _ in range(NO_VIEWER_EXIT_SECONDS + 5):
-        if try_claim_instance(reloaded):
+        if try_claim_instance():
             return True
         time.sleep(1)
     return False
 
 
-def try_claim_instance(reloaded):
+INSTANCE_MUTEX = "Local\\cc_monitor"
+# The claim's handle (Windows mutex) or file descriptor (posix lock).
+instance_lock = None
+
+
+def try_claim_instance():
     global instance_lock
     if sys.platform == "win32":
         kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
         kernel32.CreateMutexW.restype = ctypes.c_void_p
-        handle = kernel32.CreateMutexW(None, False, "Local\\cc_monitor")
-        if reloaded or ctypes.get_last_error() != 183:  # ERROR_ALREADY_EXISTS
+        handle = kernel32.CreateMutexW(None, False, INSTANCE_MUTEX)
+        # NULL: the mutex exists but this process may not open it, as when an elevated session started the other monitor.
+        if handle and ctypes.get_last_error() != 183:  # ERROR_ALREADY_EXISTS
+            instance_lock = handle
             return True
         # An open handle keeps the mutex alive after the other monitor exits.
         kernel32.CloseHandle(ctypes.c_void_p(handle))
         return False
     import fcntl
-    instance_lock = open(CACHE / "ccm.lock", "w")
+    lock = os.open(CACHE / "ccm.lock", os.O_WRONLY | os.O_CREAT)
     try:
-        # The replaced process exits right after starting this one, so a restart waits for its lock.
-        fcntl.flock(instance_lock, fcntl.LOCK_EX if reloaded else fcntl.LOCK_EX | fcntl.LOCK_NB)
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError:
-        instance_lock.close()
+        os.close(lock)
         return False
+    instance_lock = lock
     return True
 
 
@@ -782,14 +797,16 @@ if __name__ == "__main__":
         subprocess.Popen([exe, str(SCRIPT), *sys.argv[1:]], env=env, **DETACHED)
         sys.exit(0)
     CACHE.mkdir(parents=True, exist_ok=True)
-    # A restart after an edit keeps the port and the window that is already open; the page reloads itself.
+    # A restart after an edit keeps the port, the claim and the window that is already open; the page reloads itself.
     reloaded = "--reloaded" in sys.argv
-    if not try_claim_instance(reloaded):
+    if reloaded:
+        reloaded_port, instance_lock = map(int, sys.argv[sys.argv.index("--reloaded") + 1:][:2])
+    elif not try_claim_instance():
         # A live monitor shows this session; the wait covers one whose window just closed.
         add_started_session(os.environ.get("CCM_SESSION"))
-        if not claim_single_instance(reloaded):
+        if not claim_single_instance():
             sys.exit(0)
-    server = start_reloaded_server(int(sys.argv[sys.argv.index("--reloaded") + 1])) if reloaded else start_free_server()
+    server = start_reloaded_server(reloaded_port) if reloaded else start_free_server()
     port = server.server_address[1]
     print(f"Claude Monitor running at http://localhost:{port}")
     print("Press Ctrl+C to stop.")
