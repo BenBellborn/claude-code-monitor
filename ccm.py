@@ -183,16 +183,33 @@ def get_active_subagents(transcript):
 def get_sessions():
     today = date.today()
     sessions = []
+    skipped = False
     for path in SESSIONS_DIR.glob("*.json"):
         # A session file is Claude Code's: one that fails to read or holds unexpected values must not end the render.
         try:
             session = find_session(json.loads(path.read_text(encoding="utf-8")), today)
         except Exception as e:
             print(f"Session {path.name} skipped: {e!r}")
+            skipped = True
             continue
         if session:
             sessions.append(session)
-    return sorted(label_sessions(sessions), key=lambda s: s["cwd"].lower())
+    shown = sorted(label_sessions(sessions), key=lambda s: s["cwd"].lower())
+    # A file read mid-rewrite hides its session for one render; its footer and scans stay for the next.
+    if not skipped:
+        prune_session_stores({s["key"] for s in sessions}, {s["key"] for s in shown})
+    return shown
+
+
+def prune_session_stores(found, shown):
+    """Drops what sessions no longer shown left in the per-session stores. A session hidden behind a namesake keeps its scans,
+    so its transcripts are not read again from the start on every render."""
+    for store in (statusline_inputs, statuslines, max_agent_rows):
+        for key in store.keys() - shown:
+            store.pop(key, None)
+    # A session's transcript is <id>.jsonl; its subagents' are <id>/subagents/<agent>.jsonl.
+    for transcript in [t for t in transcript_totals if not {t.stem, t.parent.parent.name} & found]:
+        del transcript_totals[transcript]
 
 
 def find_session(s, today):
