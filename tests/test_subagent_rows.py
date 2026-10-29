@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import os
 import tempfile
 from pathlib import Path
 
@@ -34,6 +35,17 @@ def test_idle_teammate_has_no_row():
 def test_subagent_running_a_tool_has_a_row():
     rows = subagent_rows(REPLY, {"type": "user", "message": {"content": "next task"}}, CALL, RESULT)
     assert [r["activity"] for r in rows] == ["Grep: x"], rows
+
+
+def test_subagent_stopped_mid_call_long_ago_has_no_row():
+    tmp = Path(tempfile.mkdtemp())
+    sub = tmp / "s1" / "subagents"
+    sub.mkdir(parents=True)
+    (sub / "agent-old.meta.json").write_text(json.dumps({"agentType": "verifier"}))
+    (sub / "agent-old.jsonl").write_text(json.dumps(CALL) + "\n")
+    for f in sub.iterdir():
+        os.utime(f, (0, 0))
+    assert ccm.get_active_subagents(tmp / "s1.jsonl") == [], "a subagent silent for hours still shows as working"
 
 
 def test_unreadable_or_finished_meta_has_no_row_and_the_next_still_shows():

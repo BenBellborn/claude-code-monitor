@@ -38,6 +38,8 @@ DETACHED = {
 }
 # An idle card fades once its session has been idle this long.
 IDLE_FADE_SECONDS = 10 * 60
+# A subagent stopped or killed mid-call is never marked finished; one silent this long is gone. A tool call times out at 10 minutes.
+SUBAGENT_GONE_SECONDS = 15 * 60
 SCRIPT = Path(__file__).resolve()
 CACHE = Path.home() / ".claude" / "cache"
 # The script's modified time at start: the page reloads when the server it talks to has another one.
@@ -161,9 +163,14 @@ def get_active_subagents(transcript):
         meta = read_json(meta_path)
         if meta is None or meta.get("finished"):
             continue
-        totals = scan_transcript(meta_path.with_name(meta_path.name.replace(".meta.json", ".jsonl")))
+        agent_transcript = meta_path.with_name(meta_path.name.replace(".meta.json", ".jsonl"))
+        totals = scan_transcript(agent_transcript)
         # Teammates and interrupted subagents never get "finished"; an idle one ends on a finished reply.
         if totals["ended"]:
+            continue
+        # A subagent's transcript may not exist yet; its meta is written at spawn.
+        written = max(p.stat().st_mtime for p in (meta_path, agent_transcript) if p.exists())
+        if time.time() - written > SUBAGENT_GONE_SECONDS:
             continue
         agent_type = meta.get("agentType", "")
         agents.append({
