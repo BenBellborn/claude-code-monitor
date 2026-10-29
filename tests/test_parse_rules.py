@@ -16,7 +16,7 @@ def reply(message_id, output_tokens):
 def test_shorten_keeps_words_and_cuts_paths_to_their_name():
     assert ccm.shorten("read and/or write") == "read and/or write"
     assert ccm.shorten("Read: src/app/main.py") == "Read: main.py"
-    assert ccm.shorten("Read: C:\\Users\\Ben\\x.py") == "Read: x.py"
+    assert ccm.shorten("Read: C:\\repo\\src\\x.py") == "Read: x.py"
     assert ccm.shorten("first line\nsecond line") == "first line"
 
 
