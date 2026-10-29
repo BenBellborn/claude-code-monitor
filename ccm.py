@@ -550,6 +550,11 @@ PAGE = """<!DOCTYPE html>
 
 class MonitorHandler(BaseHTTPRequestHandler):
     def do_GET(self):
+        # A foreign Host is a DNS-rebinding page reaching 127.0.0.1; it must not read the sessions.
+        port = self.server.server_address[1]
+        if self.headers.get("Host") not in (f"localhost:{port}", f"127.0.0.1:{port}"):
+            self.send_error(403)
+            return
         if self.path == "/events":
             self.stream_events()
             return
