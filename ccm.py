@@ -756,10 +756,12 @@ STARTED_SESSIONS = CACHE / "ccm-started-sessions.txt"
 
 def find_hook_session():
     """The session a hook starts a monitor for, or None for a prompt in a session a monitor already ran for, so a closed
-    window stays closed until the next session. No hook fires on plugin install; the first prompt after it starts the
-    monitor."""
+    window stays closed until the next session, or for an event without a session id. No hook fires on plugin install; the
+    first prompt after it starts the monitor."""
     event = json.loads(sys.stdin.read() or "{}")
     session = str(event.get("session_id", ""))
+    if not session:
+        return None
     # /clear gives the same Claude Code session a new id: listed as started, its first prompt keeps a closed window closed.
     if event.get("hook_event_name") == "SessionStart" and event.get("source") == "clear":
         add_started_session(session)
