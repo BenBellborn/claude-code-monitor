@@ -4,7 +4,6 @@ import subprocess
 import sys
 import tempfile
 import textwrap
-import threading
 from pathlib import Path
 
 CCM_PATH = Path(__file__).resolve().parent.parent / "ccm.py"
@@ -15,28 +14,6 @@ def load():
     ccm = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(ccm)
     return ccm
-
-
-def test_two_hooks_at_once_keep_both_sessions():
-    ccm = load()
-    ccm.STARTED_SESSIONS = Path(tempfile.mkdtemp()) / "ccm-started-sessions.txt"
-    ccm.STARTED_SESSIONS.write_text("old")
-    real_read = ccm.read_started_sessions
-    both_read = threading.Barrier(2, timeout=1)
-
-    def read_then_wait():  # both hooks read before either writes, unless a lock keeps the second out
-        started = real_read()
-        try:
-            both_read.wait()
-        except threading.BrokenBarrierError:
-            pass
-        return started
-
-    ccm.read_started_sessions = read_then_wait
-    threads = [threading.Thread(target=ccm.add_started_session, args=(s,)) for s in ("A", "B")]
-    [t.start() for t in threads]
-    [t.join() for t in threads]
-    assert sorted(ccm.STARTED_SESSIONS.read_text().split()) == ["A", "B", "old"], ccm.STARTED_SESSIONS.read_text().split()
 
 
 def test_exit_mid_write_keeps_the_statusline_cache():

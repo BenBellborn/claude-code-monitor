@@ -2,21 +2,11 @@
   "hooks": {
     "SessionStart": [
       {
-        "matcher": "startup|resume|clear",
+        "matcher": "startup|resume",
         "hooks": [
           {
             "type": "command",
-            "command": "for py in python3 python; do if \"$py\" -c '' > /dev/null 2>&1; then \"$py\" \"${CLAUDE_PLUGIN_ROOT}/ccm.py\" --hook > /dev/null 2>&1; break; fi; done; true"
-          }
-        ]
-      }
-    ],
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "for py in python3 python; do if \"$py\" -c '' > /dev/null 2>&1; then \"$py\" \"${CLAUDE_PLUGIN_ROOT}/ccm.py\" --hook > /dev/null 2>&1; break; fi; done; true"
+            "command": "for py in python3 python; do if \"$py\" -c '' > /dev/null 2>&1; then \"$py\" \"${CLAUDE_PLUGIN_ROOT}/ccm.py\" > /dev/null 2>&1; break; fi; done; true"
           }
         ]
       }

@@ -13,7 +13,7 @@ packages to install, shipped as a Claude Code plugin.
    ```
    This installs for your user, so the monitor runs in every project. If `--marketplace` is an unknown option, run
    `claude update` first.
-3. Send a prompt in any session, or start a new one. The monitor window opens. Close it, and it stays closed until the next
+3. Start a new session, or resume one. The monitor window opens. Close it, and it stays closed until the next
    session.
 
 **Updates:** turn on auto-update once: `/plugin` > **Marketplaces** > `claude-code-monitor` > **Enable auto-update**. Without it,
@@ -31,7 +31,7 @@ window.
 - **Under the cards:** pills with the parts every session shares, for example `5h:34%->17:00`, `7d:34%->Mon 17:00`.
 
 ## How it behaves
-- Starts with every Claude Code session and on a session's first prompt (`SessionStart` and `UserPromptSubmit` hooks). Only one runs
+- Starts with every new or resumed Claude Code session (a `SessionStart` hook). Only one runs
   at a time; a second start waits up to 25 s for one whose window just closed, then quits.
 - Opens as its own app window (no tabs, no address bar) in Edge, Chrome or Chromium; without one of those, as a tab in your default
   browser.

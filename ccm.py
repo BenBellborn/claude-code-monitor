@@ -828,62 +828,11 @@ def try_claim_instance():
     return True
 
 
-STARTED_SESSIONS = CACHE / "ccm-started-sessions.txt"
-
-
-def find_hook_session():
-    """The session a hook starts a monitor for, or None for a prompt in a session a monitor already ran for, so a closed
-    window stays closed until the next session, or for an event without a session id. No hook fires on plugin install; the
-    first prompt after it starts the monitor."""
-    event = json.loads(sys.stdin.read() or "{}")
-    session = str(event.get("session_id", ""))
-    if not session:
-        return None
-    # /clear gives the same Claude Code session a new id: listed as started, its first prompt keeps a closed window closed.
-    if event.get("hook_event_name") == "SessionStart" and event.get("source") == "clear":
-        add_started_session(session)
-        return None
-    if event.get("hook_event_name") == "UserPromptSubmit" and session in read_started_sessions():
-        return None
-    return session
-
-
-def read_started_sessions():
-    return STARTED_SESSIONS.read_text().split() if STARTED_SESSIONS.exists() else []
-
-
-def add_started_session(session):
-    """Records the session once its monitor runs; a monitor that failed before that leaves the next prompt free to start one."""
-    if not session:
-        return
-    # Two monitors starting at once would each write back a list without the other's id. Appended, not rewritten, so a
-    # hook reading without the lock never sees an emptied list. Closing the lock file releases the lock.
-    # ponytail: grows one line per session start, never trimmed; trim under this lock if the file ever gets large.
-    # A lock not granted (msvcrt gives up after 10 s) leaves the session unrecorded rather than ending the monitor.
-    try:
-        with STARTED_SESSIONS.with_suffix(".lock").open("a") as lock:
-            if sys.platform == "win32":
-                import msvcrt
-                msvcrt.locking(lock.fileno(), msvcrt.LK_LOCK, 1)
-            else:
-                import fcntl
-                fcntl.flock(lock, fcntl.LOCK_EX)
-            if session not in read_started_sessions():
-                with STARTED_SESSIONS.open("a") as f:
-                    f.write(f"\n{session}")
-    except OSError:
-        pass
-
-
 if __name__ == "__main__":
     # Start again detached and return, so the hooks and `! python ccm.py` in Claude Code return at once and
     # the monitor outlives them. On Windows it runs as pythonw.exe, without a console window.
     if os.environ.get("CCM_DETACHED") != "1":
         env = {**os.environ, "CCM_DETACHED": "1"}
-        if "--hook" in sys.argv:
-            env["CCM_SESSION"] = find_hook_session()
-            if env["CCM_SESSION"] is None:
-                sys.exit(0)
         pythonw = Path(sys.executable).with_name("pythonw.exe")
         exe = str(pythonw) if sys.platform == "win32" and pythonw.exists() else sys.executable
         subprocess.Popen([exe, str(SCRIPT), *sys.argv[1:]], env=env, **DETACHED)
@@ -895,7 +844,6 @@ if __name__ == "__main__":
         reloaded_port, instance_lock = map(int, sys.argv[sys.argv.index("--reloaded") + 1:][:2])
     elif not try_claim_instance():
         # A live monitor shows this session; the wait covers one whose window just closed.
-        add_started_session(os.environ.get("CCM_SESSION"))
         if not claim_single_instance():
             sys.exit(0)
     server = start_reloaded_server(reloaded_port) if reloaded else start_free_server()
@@ -904,7 +852,6 @@ if __name__ == "__main__":
     print("Press Ctrl+C to stop.")
     if not reloaded:
         open_monitor_window(port)
-        add_started_session(os.environ.get("CCM_SESSION"))
     threading.Thread(target=restart_on_new_version, args=(port,), daemon=True).start()
     threading.Thread(target=run_statuslines, daemon=True).start()
     threading.Thread(target=exit_when_window_closed, daemon=True).start()
