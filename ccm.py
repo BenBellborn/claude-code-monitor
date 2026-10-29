@@ -184,52 +184,61 @@ def get_sessions():
     today = date.today()
     sessions = []
     for path in SESSIONS_DIR.glob("*.json"):
+        # A session file is Claude Code's: one that fails to read or holds unexpected values must not end the render.
         try:
-            s = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
+            session = find_session(json.loads(path.read_text(encoding="utf-8")), today)
+        except Exception as e:
+            print(f"Session {path.name} skipped: {e!r}")
             continue
-        # updatedAt moves only on a status change, so a session busy or waiting since before midnight stays.
-        status = s.get("status")
-        if status not in ("busy", "waiting") and datetime.fromtimestamp(s.get("updatedAt", 0) / 1000).date() != today:
-            continue
-        # A spare is a background session started ahead of a job; it has no prompt or transcript yet.
-        if s.get("spare"):
-            continue
-        transcript = next(PROJECTS_DIR.glob(f"*/{s['sessionId']}.jsonl"), None)
-        totals = scan_transcript(transcript) if transcript else {"model": "?", "effort": "?"}
-        model, effort = totals["model"], totals["effort"]
-        progress, footer = [], []
-        if transcript:
-            if status == "busy":
-                progress = find_turn_progress(totals)
-                footer.append(f"{totals['turn_calls']} tool calls")
-            footer.append(f"{format_tokens(totals['in'])} in / {format_tokens(totals['out'])} out")
-            statusline_inputs[s["sessionId"]] = {
-                "session_id": s["sessionId"],
-                "transcript_path": str(transcript),
-                "cwd": s.get("cwd", ""),
-                "model": model,
-                "context_tokens": totals["context"],
-            }
-        task = find_running_task(totals) if transcript else ""
-        detail, highlight = task, bool(task)
-        color = {"busy": "working", "waiting": "waiting"}.get(status, "idle")
-        sessions.append({
-            "key": s["sessionId"],
-            "cwd": s.get("cwd", ""),
-            # A copied session is named "ARC (2)": the number is dropped so it matches its original.
-            "name": re.sub(r"\s*\(\d+\)$", "", s.get("name") or Path(s.get("cwd", "")).name),
-            "updated": s.get("statusUpdatedAt") or s.get("updatedAt", 0),
-            "model": model,
-            "effort": str(effort),
-            "detail": detail,
-            "highlight": highlight,
-            "color": color,
-            "progress": " · ".join(progress),
-            "footer": footer,
-            "agents": get_active_subagents(transcript) if transcript else [],
-        })
+        if session:
+            sessions.append(session)
     return sorted(label_sessions(sessions), key=lambda s: s["cwd"].lower())
+
+
+def find_session(s, today):
+    """The card data of a session shown today, or None for one that is not."""
+    # updatedAt moves only on a status change, so a session busy or waiting since before midnight stays.
+    status = s.get("status")
+    if status not in ("busy", "waiting") and datetime.fromtimestamp(s.get("updatedAt", 0) / 1000).date() != today:
+        return None
+    # A spare is a background session started ahead of a job; it has no prompt or transcript yet.
+    if s.get("spare"):
+        return None
+    cwd = s.get("cwd") or ""
+    transcript = next(PROJECTS_DIR.glob(f"*/{s['sessionId']}.jsonl"), None)
+    totals = scan_transcript(transcript) if transcript else {"model": "?", "effort": "?"}
+    model, effort = totals["model"], totals["effort"]
+    progress, footer = [], []
+    if transcript:
+        if status == "busy":
+            progress = find_turn_progress(totals)
+            footer.append(f"{totals['turn_calls']} tool calls")
+        footer.append(f"{format_tokens(totals['in'])} in / {format_tokens(totals['out'])} out")
+        statusline_inputs[s["sessionId"]] = {
+            "session_id": s["sessionId"],
+            "transcript_path": str(transcript),
+            "cwd": cwd,
+            "model": model,
+            "context_tokens": totals["context"],
+        }
+    task = find_running_task(totals) if transcript else ""
+    detail, highlight = task, bool(task)
+    color = {"busy": "working", "waiting": "waiting"}.get(status, "idle")
+    return {
+        "key": s["sessionId"],
+        "cwd": cwd,
+        # A copied session is named "ARC (2)": the number is dropped so it matches its original.
+        "name": re.sub(r"\s*\(\d+\)$", "", s.get("name") or Path(cwd).name),
+        "updated": s.get("statusUpdatedAt") or s.get("updatedAt", 0),
+        "model": model,
+        "effort": str(effort),
+        "detail": detail,
+        "highlight": highlight,
+        "color": color,
+        "progress": " · ".join(progress),
+        "footer": footer,
+        "agents": get_active_subagents(transcript) if transcript else [],
+    }
 
 
 def label_sessions(sessions):
@@ -575,13 +584,15 @@ def restart_on_new_version(port):
     seen = VERSION
     while True:
         time.sleep(1)
-        current = str(SCRIPT.stat().st_mtime_ns)
-        if current == seen:
-            continue
-        seen = current
+        # Mid save-by-rename the script is briefly gone or locked; the next poll reads it again.
         try:
-            compile(SCRIPT.read_text(encoding="utf-8"), str(SCRIPT), "exec")
-        except SyntaxError as e:
+            current = str(SCRIPT.stat().st_mtime_ns)
+            if current == seen:
+                continue
+            source = SCRIPT.read_text(encoding="utf-8")
+            seen = current
+            compile(source, str(SCRIPT), "exec")
+        except (OSError, ValueError, SyntaxError) as e:
             print(f"New version not loaded: {e}")
             continue
         print("New version found, restarting.")
@@ -632,6 +643,9 @@ def pin_monitor_window(port):
     user32 = ctypes.windll.user32
     user32.SetWindowPos.argtypes = [wintypes.HWND, wintypes.HWND, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, wintypes.UINT]
     user32.PostMessageW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+    user32.GetWindowTextLengthW.argtypes = [wintypes.HWND]
+    user32.GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+    user32.IsWindowVisible.argtypes = [wintypes.HWND]
     topmost = wintypes.HWND(-1)
     no_move_size_activate = 0x0001 | 0x0002 | 0x0010
     wm_close = 0x0010
@@ -660,7 +674,11 @@ def pin_monitor_window(port):
         for hwnd in [h for h, n in error_checks.items() if n >= 2]:
             user32.PostMessageW(hwnd, wm_close, 0, 0)
             del error_checks[hwnd]
-            open_monitor_window(port)
+            # A browser that fails to start leaves no window, so the monitor exits as when the window closes.
+            try:
+                open_monitor_window(port)
+            except OSError:
+                pass
         time.sleep(3)
 
 
