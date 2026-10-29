@@ -17,7 +17,8 @@ def test_only_own_host_reads_the_page():
     spec = importlib.util.spec_from_file_location("ccm", CCM_PATH)
     ccm = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(ccm)
-    ccm.render_sessions = lambda: ("T", "<b>SECRET-PROMPT</b>")
+    ccm.update_sessions = lambda: []
+    ccm.build_title_and_cards = lambda sessions: ("T", "<b>SECRET-PROMPT</b>")
     server = ccm.MonitorServer(("127.0.0.1", 0), ccm.MonitorHandler)
     port = server.server_address[1]
     threading.Thread(target=server.serve_forever, daemon=True).start()

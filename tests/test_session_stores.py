@@ -30,7 +30,7 @@ def stores_after_render(unreadable_session_file):
     ccm.max_agent_rows["ended"] = 1
     ccm.scan_transcript(project / "ended.jsonl")
     ccm.scan_transcript(project / "ended" / "subagents" / "agent-b.jsonl")
-    ccm.render_sessions()
+    ccm.update_sessions()
     return {
         "statusline_inputs": set(ccm.statusline_inputs), "statuslines": set(ccm.statuslines),
         "max_agent_rows": set(ccm.max_agent_rows),

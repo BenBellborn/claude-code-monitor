@@ -35,7 +35,7 @@ def test_concurrent_renders_scan_each_block_once():
             f.write("".join(json.dumps(e) + "\n" for e in entries).encode())
 
     append(prompt("first"))
-    ccm.render_sessions()
+    ccm.update_sessions()
     append(call("m1"))
     real_open = open
 
@@ -54,7 +54,7 @@ def test_concurrent_renders_scan_each_block_once():
 
     def render():
         try:
-            ccm.render_sessions()
+            ccm.update_sessions()
         except Exception as e:
             errors.append(e)
 
@@ -64,7 +64,7 @@ def test_concurrent_renders_scan_each_block_once():
     assert not errors, errors
     del ccm.open
     append(prompt("second"))
-    ccm.render_sessions()
+    ccm.update_sessions()
     totals = ccm.transcript_totals[transcript]
     assert totals["offset"] == transcript.stat().st_size, (totals["offset"], transcript.stat().st_size)
     assert totals["turn_prompt"] == "second", "second prompt skipped: offset advanced twice"

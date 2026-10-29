@@ -62,7 +62,7 @@ def format_activity(block):
     return shorten(f"{block['name']}: {args[key]}") if key else block["name"]
 
 
-def find_running_task(totals):
+def build_running_task(totals):
     """The skill the current turn runs, else its prompt."""
     if totals["turn_skill"]:
         return "/" + totals["turn_skill"]
@@ -89,7 +89,7 @@ def is_prompt(entry):
     return entry.get("type") == "user" and (entry.get("origin") or {}).get("kind") == "human"
 
 
-def find_turn_progress(totals):
+def build_turn_progress(totals):
     progress = [totals["activity"]] if totals["activity"] else []
     if totals["turn_start"]:
         begun = datetime.fromisoformat(totals["turn_start"].replace("Z", "+00:00"))
@@ -227,7 +227,7 @@ def find_session(s, today):
     progress, footer = [], []
     if transcript:
         if status == "busy":
-            progress = find_turn_progress(totals)
+            progress = build_turn_progress(totals)
             footer.append(f"{totals['turn_calls']} tool calls")
         footer.append(f"{format_tokens(totals['in'])} in / {format_tokens(totals['out'])} out")
         statusline_inputs[s["sessionId"]] = {
@@ -237,7 +237,7 @@ def find_session(s, today):
             "model": model,
             "context_tokens": totals["context"],
         }
-    task = find_running_task(totals) if transcript else ""
+    task = build_running_task(totals) if transcript else ""
     detail, highlight = task, bool(task)
     color = {"busy": "working", "waiting": "waiting"}.get(status, "idle")
     return {
@@ -293,7 +293,7 @@ def effort_color(effort):
     return "orange" if effort in ("max", "xhigh", "ultra") else "yellow" if effort == "high" else "grey"
 
 
-def render_model_effort(model, effort):
+def build_model_effort(model, effort):
     return (
         f'<span class="{model_color(model)}">{html.escape(model)}</span>:'
         f'<span class="{effort_color(effort)}">{html.escape(str(effort))}</span>'
@@ -310,7 +310,7 @@ STATUSLINE_CACHE = CACHE / "cc-monitor-statuslines.json"
 ANSI_CLASSES = {"31": "red", "33": "yellow", "38;5;208": "orange"}
 
 
-def find_git_bash():
+def get_git_bash():
     """The bash Claude Code runs statusline commands with; the command's ~ paths need it."""
     configured = os.environ.get("CLAUDE_CODE_GIT_BASH_PATH")
     if configured:
@@ -323,7 +323,7 @@ def find_git_bash():
     return "bash"
 
 
-def find_context_window(model):
+def get_context_window(model):
     for path in (CACHE / "model-catalog").glob("*.json"):
         try:
             models = json.loads(path.read_text(encoding="utf-8"))["catalog"]["config"]["models"]
@@ -337,7 +337,7 @@ def find_context_window(model):
 
 def build_statusline_input(info, limits):
     """The statusLine JSON for a session; model and effort are left out, so the command skips those parts."""
-    window = find_context_window(info["model"])
+    window = get_context_window(info["model"])
     data = {
         "session_id": info["session_id"],
         "transcript_path": info["transcript_path"],
@@ -350,7 +350,7 @@ def build_statusline_input(info, limits):
     return data
 
 
-def render_ansi(text):
+def build_ansi_html(text):
     """Statusline text with its ANSI colours as spans; a reset or unknown code ends the colour."""
     out, color = [], ""
     for i, piece in enumerate(ANSI.split(text)):
@@ -420,7 +420,7 @@ def save_statuslines(lines, shared):
 def run_statuslines():
     """Runs the settings.json statusLine command for every session every 10 s and stores its parts."""
     global global_parts
-    bash = find_git_bash()
+    bash = get_git_bash()
     # The last lines from before a restart show until the first run replaces them.
     saved = read_json(STATUSLINE_CACHE)
     is_text_list = lambda v: isinstance(v, list) and all(isinstance(p, str) for p in v)
@@ -444,9 +444,9 @@ def run_statuslines():
             for part in parts:
                 match = GLOBAL_PART.search(ANSI.sub("", part))
                 if match:
-                    shared[match.group(1) or match.group(2)] = render_ansi(part)
+                    shared[match.group(1) or match.group(2)] = build_ansi_html(part)
                 else:
-                    lines[key].append(render_ansi(part))
+                    lines[key].append(build_ansi_html(part))
         if not has_command:
             statuslines.clear()
         statuslines.update(lines)
@@ -457,46 +457,54 @@ def run_statuslines():
         time.sleep(10)
 
 
-def render_usage():
+def build_usage_pills():
     """The statusline parts every session shares, as pills under the cards."""
     return '<p class="usage">' + "".join(f'<span class="pill">{p}</span>' for p in global_parts) + '</p>' if global_parts else ""
 
 
 # Most agent rows each card has shown; cards pad to it so they grow but never shrink until the script restarts.
 max_agent_rows = {}
-# Scans and render state are read-modify-written; every request thread renders.
+# Scans, agent row counts and titles are read-modify-written; every request thread updates them.
 render_lock = threading.Lock()
 
 
-def render_sessions():
-    """The tab title and the session cards' HTML."""
+def update_sessions():
+    """Scans every session and records the agent rows and title the page shows next; returns the sessions to show, each with
+    the agent row count its card pads to."""
     with render_lock:
         sessions = get_sessions()
-        cards = []
         for s in sessions:
-            rows = [
-                f'<div class="agent">● {render_model_effort(a["model"], a["effort"])} - '
-                f'{html.escape(a["type"]) + " - " if a["type"] else ""}{html.escape(a["activity"])}</div>'
-                for a in s["agents"]
-            ]
-            max_agent_rows[s["key"]] = max(max_agent_rows.get(s["key"], 0), len(rows))
-            rows += ['<div class="agent">&nbsp;</div>'] * (max_agent_rows[s["key"]] - len(rows))
-            agents = "".join(rows)
-            detail = html.escape(s["detail"])
-            if s["highlight"]:
-                detail = f'<span class="highlight">{detail}</span>'
-            faded = " faded" if s["color"] == "idle" and time.time() - s["updated"] / 1000 > IDLE_FADE_SECONDS else ""
-            cards.append(
-                f'<div class="card {s["color"]}{faded}" data-key="{html.escape(s["key"])}">'
-                f'<b class="name">{html.escape(s["label"])}</b> - {render_model_effort(s["model"], s["effort"])}'
-                f'<div class="state">Running: {detail}</div>'
-                f'<div class="progress">{STOPPED_LINES.get(s["color"]) or html.escape(s["progress"]) or "&nbsp;"}</div>{agents}'
-                f'<div class="footer">{" | ".join(statuslines.get(s["key"], []) + [html.escape(f) for f in s["footer"]]) or "&nbsp;"}</div></div>'
-            )
+            max_agent_rows[s["key"]] = max(max_agent_rows.get(s["key"], 0), len(s["agents"]))
+            s["agent_rows"] = max_agent_rows[s["key"]]
         title = build_title(sessions)
         if not recent_titles or recent_titles[-1] != title:
             recent_titles.append(title)
-        return title, ("".join(cards) or '<p class="empty">No sessions today.</p>') + render_usage()
+        return sessions
+
+
+def build_title_and_cards(sessions):
+    """The tab title and the session cards' HTML."""
+    cards = []
+    for s in sessions:
+        rows = [
+            f'<div class="agent">● {build_model_effort(a["model"], a["effort"])} - '
+            f'{html.escape(a["type"]) + " - " if a["type"] else ""}{html.escape(a["activity"])}</div>'
+            for a in s["agents"]
+        ]
+        rows += ['<div class="agent">&nbsp;</div>'] * (s["agent_rows"] - len(rows))
+        agents = "".join(rows)
+        detail = html.escape(s["detail"])
+        if s["highlight"]:
+            detail = f'<span class="highlight">{detail}</span>'
+        faded = " faded" if s["color"] == "idle" and time.time() - s["updated"] / 1000 > IDLE_FADE_SECONDS else ""
+        cards.append(
+            f'<div class="card {s["color"]}{faded}" data-key="{html.escape(s["key"])}">'
+            f'<b class="name">{html.escape(s["label"])}</b> - {build_model_effort(s["model"], s["effort"])}'
+            f'<div class="state">Running: {detail}</div>'
+            f'<div class="progress">{STOPPED_LINES.get(s["color"]) or html.escape(s["progress"]) or "&nbsp;"}</div>{agents}'
+            f'<div class="footer">{" | ".join(statuslines.get(s["key"], []) + [html.escape(f) for f in s["footer"]]) or "&nbsp;"}</div></div>'
+        )
+    return build_title(sessions), ("".join(cards) or '<p class="empty">No sessions today.</p>') + build_usage_pills()
 
 
 STOPPED_LINES = {
@@ -613,7 +621,7 @@ class MonitorHandler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.end_headers()
-        title, cards = render_sessions()
+        title, cards = build_title_and_cards(update_sessions())
         version_time = time.strftime("%Y-%m-%d %H:%M", time.localtime(int(VERSION) / 1e9))
         page = PAGE.replace("__VERSION_TIME__", version_time).replace("__VERSION__", VERSION).replace("__FIRST_PORT__", str(FIRST_PORT)).replace("__TITLE__", title).replace("__SESSIONS__", cards)
         self.wfile.write(page.encode("utf-8"))
@@ -629,7 +637,7 @@ class MonitorHandler(BaseHTTPRequestHandler):
         # ponytail: re-reads the session files every second; a file watcher if that ever costs too much.
         try:
             while True:
-                current = [VERSION, *render_sessions()]
+                current = [VERSION, *build_title_and_cards(update_sessions())]
                 # An unchanged list still sends a comment line, so a closed window shows up as a failed write.
                 self.wfile.write(f"data: {json.dumps(current)}\n\n".encode("utf-8") if current != last else b":\n\n")
                 self.wfile.flush()

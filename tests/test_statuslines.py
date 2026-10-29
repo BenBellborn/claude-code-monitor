@@ -74,6 +74,14 @@ def test_shared_parts_merge_across_sessions():
     assert ccm.global_parts == ["5h:20%", "rtk 50%, codemap 60%"], f"global_parts: {ccm.global_parts}"
 
 
+def test_ansi_colours_become_spans():
+    ccm, calls = load("x", {"a": "\x1b[31mred<\x1b[0m plain | 5h:\x1b[33m1%\x1b[9mx"})
+    ccm.statusline_inputs["a"] = info("a")
+    one_pass(ccm)
+    assert ccm.statuslines["a"] == ['<span class="red">red&lt;</span> plain'], ccm.statuslines["a"]
+    assert ccm.global_parts == ['5h:<span class="yellow">1%</span>x'], ccm.global_parts
+
+
 def test_statusline_runs_in_session_cwd():
     spec = importlib.util.spec_from_file_location("ccm", CCM_PATH)
     ccm = importlib.util.module_from_spec(spec)
@@ -93,7 +101,7 @@ def test_timeout_returns_while_a_grandchild_holds_stdout():
     ccm = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(ccm)
     start = time.monotonic()
-    out = ccm.run_statusline_command(ccm.find_git_bash(), "sleep 25; echo x", "{}", "")
+    out = ccm.run_statusline_command(ccm.get_git_bash(), "sleep 25; echo x", "{}", "")
     elapsed = time.monotonic() - start
     assert (out, elapsed < 15) == ("", True), f"returned {out!r} after {elapsed:.1f} s"
 

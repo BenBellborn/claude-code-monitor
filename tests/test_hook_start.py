@@ -81,7 +81,7 @@ def test_hook_command_runs_ccm_once_when_it_fails():
         for event, entries in hooks["hooks"].items():
             log.unlink(missing_ok=True)
             subprocess.run(
-                [ccm.find_git_bash(), "-c", entries[0]["hooks"][0]["command"]], input="", check=True, timeout=30,
+                [ccm.get_git_bash(), "-c", entries[0]["hooks"][0]["command"]], input="", check=True, timeout=30,
                 env={**os.environ, "PATH": f"{tmp}{os.pathsep}{os.environ['PATH']}", "RUNS": str(log), "CLAUDE_PLUGIN_ROOT": str(tmp)},
             )
             runs = log.read_text().split() if log.exists() else []
