@@ -67,6 +67,13 @@ def test_run_that_prints_nothing_clears_its_parts():
     assert (ccm.statuslines["s"], ccm.global_parts) == ([], []), f"shown after run: {ccm.statuslines}, {ccm.global_parts}"
 
 
+def test_shared_parts_merge_across_sessions():
+    ccm, calls = load("x", {"a": "dir | 5h:10% | rtk 50%, codemap 60%", "b": "dir | 5h:20%"})
+    ccm.statusline_inputs.update({"a": info("a"), "b": info("b")})
+    one_pass(ccm)
+    assert ccm.global_parts == ["5h:20%", "rtk 50%, codemap 60%"], f"global_parts: {ccm.global_parts}"
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

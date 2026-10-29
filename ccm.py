@@ -407,20 +407,26 @@ def run_statuslines():
         command = status_line.get("command") if isinstance(status_line, dict) else None
         has_command = isinstance(command, str) and bool(command.strip())
         limits = read_json(CACHE / "rate-limits.json")
-        lines, shared = {}, []
+        # A shared part per key (5h, 7d, rtk, codemap); the session run last wins.
+        lines, shared = {}, {}
         # ponytail: one run per session every 10 s (jq and git forks each); per render would start ~15 processes per second.
         for key, info in list(statusline_inputs.items()) if has_command else []:
             text = json.dumps(build_statusline_input(info, limits if isinstance(limits, dict) else None))
             parts = [p for p in run_statusline_command(bash, command, text).strip().split(" | ") if p.strip()]
-            lines[key] = [render_ansi(p) for p in parts if not GLOBAL_PART.search(ANSI.sub("", p))]
-            shared = [render_ansi(p) for p in parts if GLOBAL_PART.search(ANSI.sub("", p))]
+            lines[key] = []
+            for part in parts:
+                match = GLOBAL_PART.search(ANSI.sub("", part))
+                if match:
+                    shared[match.group(1) or match.group(2)] = render_ansi(part)
+                else:
+                    lines[key].append(render_ansi(part))
         if not has_command:
             statuslines.clear()
         statuslines.update(lines)
         # No session to run for yet (the first pass beats the first render): the pills and the cache from before a restart stay.
         if lines or not has_command:
-            global_parts = shared
-            save_statuslines(lines, shared)
+            global_parts = list(shared.values())
+            save_statuslines(lines, global_parts)
         time.sleep(10)
 
 
