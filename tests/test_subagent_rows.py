@@ -36,6 +36,18 @@ def test_subagent_running_a_tool_has_a_row():
     assert [r["activity"] for r in rows] == ["Grep: x"], rows
 
 
+def test_unreadable_or_finished_meta_has_no_row_and_the_next_still_shows():
+    tmp = Path(tempfile.mkdtemp())
+    sub = tmp / "s1" / "subagents"
+    sub.mkdir(parents=True)
+    (sub / "a-bad.meta.json").write_text("{")
+    (sub / "b-folder.meta.json").mkdir()
+    (sub / "c-done.meta.json").write_text(json.dumps({"finished": True}))
+    (sub / "d-live.meta.json").write_text(json.dumps({"agentType": "general-purpose", "description": "live"}))
+    rows = ccm.get_active_subagents(tmp / "s1.jsonl")
+    assert [(r["type"], r["activity"]) for r in rows] == [("", "live")], rows
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

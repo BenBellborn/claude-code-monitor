@@ -159,11 +159,8 @@ def scan_transcript(transcript):
 def get_active_subagents(transcript):
     agents = []
     for meta_path in sorted(transcript.with_suffix("").glob("subagents/*.meta.json")):
-        try:
-            meta = json.loads(meta_path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            continue
-        if meta.get("finished"):
+        meta = read_json(meta_path)
+        if meta is None or meta.get("finished"):
             continue
         totals = scan_transcript(meta_path.with_name(meta_path.name.replace(".meta.json", ".jsonl")))
         # Teammates and interrupted subagents never get "finished"; an idle one ends on a finished reply.
