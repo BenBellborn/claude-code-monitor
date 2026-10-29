@@ -104,7 +104,7 @@ def format_tokens(n):
 
 
 # Per transcript: bytes read so far, message ids counted, token totals, the current turn's start and tool calls, and the last
-# reply's model, effort, context size and tool call.
+# reply's model, effort, context size and tool call, and whether the transcript ends on a finished reply.
 transcript_totals = {}
 
 
@@ -113,7 +113,7 @@ def scan_transcript(transcript):
     totals = transcript_totals.setdefault(
         transcript,
         {"offset": 0, "seen": set(), "in": 0, "out": 0, "turn_start": None, "turn_calls": 0, "turn_prompt": "", "turn_skill": None,
-         "model": "?", "effort": "?", "context": 0, "activity": None},
+         "model": "?", "effort": "?", "context": 0, "activity": None, "ended": False},
     )
     # A subagent's transcript may not exist yet.
     try:
@@ -132,6 +132,8 @@ def scan_transcript(transcript):
             continue
         if is_prompt(e):
             totals.update(turn_start=e.get("timestamp"), turn_calls=0, turn_prompt=read_prompt_text(e), turn_skill=None)
+        if e.get("type") in ("user", "assistant"):
+            totals["ended"] = (e.get("message") or {}).get("stop_reason") == "end_turn"
         message = e.get("message") if e.get("type") == "assistant" else None
         # API errors and limit notices are written as synthetic replies with no model, effort or usage of their own.
         if not message or e.get("isApiErrorMessage") or message.get("model") == "<synthetic>":
@@ -165,6 +167,9 @@ def get_active_subagents(transcript):
         if meta.get("finished"):
             continue
         totals = scan_transcript(meta_path.with_name(meta_path.name.replace(".meta.json", ".jsonl")))
+        # Teammates and interrupted subagents never get "finished"; an idle one ends on a finished reply.
+        if totals["ended"]:
+            continue
         agent_type = meta.get("agentType", "")
         agents.append({
             "model": totals["model"],
