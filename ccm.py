@@ -51,8 +51,7 @@ PATH = re.compile(r"""(?<![^\s"'=(])(?:(?:[A-Za-z]:|~|\.{1,2})?[\\/](?:[^\s\\/"'
 
 
 def shorten(text):
-    text = PATH.sub(lambda m: m.group(1), text.split("\n")[0])
-    return text
+    return PATH.sub(lambda m: m.group(1), text.split("\n")[0])
 
 
 def format_activity(block):
