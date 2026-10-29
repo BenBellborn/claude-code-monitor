@@ -98,7 +98,8 @@ Remove:
 Remove the Claude Code Monitor completely:
 1. Stop the process running ccm.py (on Windows the pythonw.exe running it, on Mac and Linux pkill -f ccm.py).
 2. Run claude plugin uninstall ccm@claude-code-monitor, then claude plugin marketplace remove claude-code-monitor.
-3. Delete ~/.claude/cache/cc-monitor-statuslines.json, ~/.claude/cache/ccm.lock and ~/.claude/cache/rate-limits.json.
+3. Delete these files in ~/.claude/cache: cc-monitor-statuslines.json, cc-monitor-statuslines.json.tmp, ccm.lock,
+   ccm-started-sessions.txt, ccm-started-sessions.lock and rate-limits.json.
 4. If the script my statusLine.command runs saves rate_limits to rate-limits.json "for ccm.py", remove those lines.
    Change nothing else in it.
 ```

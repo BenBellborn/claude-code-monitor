@@ -386,8 +386,11 @@ def run_statuslines():
                 statuslines[key] = own
             if shared:
                 global_parts = shared
+        # Written aside and renamed: a restart or window-close exit from another thread mid-write would leave an empty cache.
+        temp = STATUSLINE_CACHE.with_name(STATUSLINE_CACHE.name + ".tmp")
         try:
-            STATUSLINE_CACHE.write_text(json.dumps({"sessions": statuslines, "shared": global_parts}), encoding="utf-8")
+            temp.write_text(json.dumps({"sessions": statuslines, "shared": global_parts}), encoding="utf-8")
+            os.replace(temp, STATUSLINE_CACHE)
         except OSError:
             pass
         time.sleep(10)
@@ -768,10 +771,25 @@ def read_started_sessions():
 
 def add_started_session(session):
     """Records the session once its monitor runs; a monitor that failed before that leaves the next prompt free to start one."""
-    started = read_started_sessions()
-    if not session or session in started:
+    if not session:
         return
-    STARTED_SESSIONS.write_text("\n".join((started + [session])[-200:]))
+    # Two monitors starting at once would each write back a list without the other's id. Appended, not rewritten, so a
+    # hook reading without the lock never sees an emptied list. Closing the lock file releases the lock.
+    # ponytail: grows one line per session start, never trimmed; trim under this lock if the file ever gets large.
+    # A lock not granted (msvcrt gives up after 10 s) leaves the session unrecorded rather than ending the monitor.
+    try:
+        with STARTED_SESSIONS.with_suffix(".lock").open("a") as lock:
+            if sys.platform == "win32":
+                import msvcrt
+                msvcrt.locking(lock.fileno(), msvcrt.LK_LOCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(lock, fcntl.LOCK_EX)
+            if session not in read_started_sessions():
+                with STARTED_SESSIONS.open("a") as f:
+                    f.write(f"\n{session}")
+    except OSError:
+        pass
 
 
 if __name__ == "__main__":
