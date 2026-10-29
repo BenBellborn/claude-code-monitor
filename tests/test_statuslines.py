@@ -1,7 +1,9 @@
 import importlib.util
 import json
+import subprocess
 import tempfile
 import time
+import types
 from pathlib import Path
 
 CCM_PATH = Path(__file__).resolve().parent.parent / "ccm.py"
@@ -105,6 +107,76 @@ def test_failed_start_gives_no_output():
     assert ccm.run_statusline_command(str(Path(tempfile.mkdtemp()) / "no-bash"), "cat", "{}", "") == "", "missing bash"
     assert ccm.run_statusline_command(bash, "echo \0x", "{}", "") == "", "NUL in command"
     assert ccm.run_statusline_command(bash, "cat", "{}", str(Path(tempfile.mkdtemp()) / "gone")) == "", "missing cwd"
+
+
+def load_plain():
+    spec = importlib.util.spec_from_file_location("ccm", CCM_PATH)
+    ccm = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(ccm)
+    return ccm
+
+
+def test_git_bash_is_the_configured_one_else_bash_on_path():
+    ccm = load_plain()
+    ccm.os = types.SimpleNamespace(environ={"CLAUDE_CODE_GIT_BASH_PATH": "D:/git/bin/bash.exe"})
+    assert ccm.get_git_bash() == "D:/git/bin/bash.exe"
+    ccm.os = types.SimpleNamespace(environ={})
+    ccm.shutil = types.SimpleNamespace(which=lambda name: None)
+    assert ccm.get_git_bash() == "bash", "no git on PATH"
+
+
+def test_context_window_comes_from_the_model_catalog_else_200k():
+    ccm = load_plain()
+    ccm.CACHE = Path(tempfile.mkdtemp())
+    catalog = ccm.CACHE / "model-catalog"
+    catalog.mkdir()
+    (catalog / "a.json").write_text("{broken")
+    (catalog / "b.json").write_text(json.dumps({"catalog": {"config": {"models": [{"id": "big", "runtime": {"max_input_tokens": 1000000}}]}}}))
+    assert ccm.get_context_window("big") == 1000000
+    assert ccm.get_context_window("other") == 200000
+
+
+def test_statusline_input_carries_the_rate_limits_when_known():
+    ccm = load_plain()
+    ccm.CACHE = Path(tempfile.mkdtemp())
+    limits = {"five_hour": {"used_percentage": 10}}
+    assert ccm.build_statusline_input(info("s"), limits)["rate_limits"] == limits
+    assert "rate_limits" not in ccm.build_statusline_input(info("s"), None)
+
+
+def test_posix_timeout_kills_the_process_group_and_a_failed_read_gives_no_output():
+    ccm = load_plain()
+    killed = []
+
+    class Process:
+        pid = 42
+
+        def __init__(self, error):
+            self.error, self.killed = error, False
+
+        def communicate(self, text=None, timeout=None):
+            if timeout:
+                raise self.error
+            return "", None
+
+        def kill(self):
+            self.killed = True
+
+    ccm.sys = types.SimpleNamespace(platform="linux")
+    ccm.os = types.SimpleNamespace(killpg=lambda pid, signal: killed.append((pid, signal)))
+    for error, kills in ((subprocess.TimeoutExpired("bash", 10), [(42, 9)]), (OSError("pipe closed"), [])):
+        process = Process(error)
+        ccm.subprocess = types.SimpleNamespace(**{**vars(subprocess), "Popen": lambda *args, **kwargs: process})
+        killed.clear()
+        assert ccm.run_statusline_command("bash", "x", "{}", "") == "", error
+        assert (killed, process.killed) == (kills, bool(kills)), f"{error!r}: killed {killed}"
+
+
+def test_cache_write_that_fails_is_skipped():
+    ccm = load_plain()
+    ccm.STATUSLINE_CACHE = Path(tempfile.mkdtemp()) / "gone" / "cache.json"
+    ccm.save_statuslines({"s": ["x"]}, [])
+    assert not ccm.STATUSLINE_CACHE.exists()
 
 
 def test_timeout_returns_while_a_grandchild_holds_stdout():

@@ -40,6 +40,20 @@ def test_scan_transcript_counts_a_reply_once_and_waits_for_a_whole_line():
     assert ccm.scan_transcript(path)["out"] == 12, "a line read half-written is lost"
 
 
+def test_scan_transcript_skips_a_broken_line_and_keeps_the_skill_that_replied():
+    path = Path(tempfile.mkdtemp()) / "t.jsonl"
+    path.write_text("{broken\n" + json.dumps({**reply("m1", 5), "attributionSkill": "fix"}) + "\n", encoding="utf-8")
+    totals = ccm.scan_transcript(path)
+    assert (totals["out"], totals["turn_skill"]) == (5, "fix"), totals
+
+
+def test_running_task_is_the_skill_else_the_whole_command_else_the_short_prompt():
+    totals = {"turn_skill": None, "turn_prompt": "/fix all\nmore"}
+    assert ccm.build_running_task({**totals, "turn_skill": "plan"}) == "/plan"
+    assert ccm.build_running_task(totals) == "/fix all", "a slash command is shortened as a path"
+    assert ccm.build_running_task({**totals, "turn_prompt": "edit src/app/x.py"}) == "edit x.py"
+
+
 def test_label_sessions_keeps_the_working_one_and_prefixes_clashing_folders():
     def session(cwd, color, updated):
         return {"cwd": cwd, "name": Path(cwd).name, "color": color, "updated": updated}

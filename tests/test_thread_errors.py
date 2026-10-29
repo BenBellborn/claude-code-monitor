@@ -1,5 +1,7 @@
 import importlib.util
 import json
+import os
+import sys
 import tempfile
 import time
 import types
@@ -81,6 +83,36 @@ def test_watcher_retries_a_read_that_failed():
         ccm.restart_on_new_version(0)
     except Restarted:
         pass
+
+
+def test_watcher_restarts_on_the_same_port_and_claim_once_the_script_changes():
+    ccm = load()
+    ccm.SCRIPT = Path(tempfile.mkdtemp()) / "ccm.py"
+    ccm.SCRIPT.write_text("x = 1\n")
+    ccm.VERSION = str(ccm.SCRIPT.stat().st_mtime_ns)
+    ccm.instance_lock = 7
+    polls, started = [0], []
+
+    class Exited(Exception):
+        pass
+
+    def sleep(_):
+        polls[0] += 1
+        if polls[0] == 2:  # the first poll sees the running version
+            os.utime(ccm.SCRIPT, ns=(0, 5))
+
+    def exit(_):
+        raise Exited
+
+    ccm.time = types.SimpleNamespace(sleep=sleep)
+    ccm.start_with_instance_claim = started.append
+    ccm.os = types.SimpleNamespace(_exit=exit)
+    try:
+        ccm.restart_on_new_version(8123)
+    except Exited:
+        pass
+    assert polls[0] == 2, f"restarted after {polls[0]} polls"
+    assert started == [[sys.executable, str(ccm.SCRIPT), "--reloaded", "8123", "7"]], started
 
 
 def test_watcher_keeps_polling_while_the_script_is_gone():

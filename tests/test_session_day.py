@@ -43,6 +43,19 @@ def test_idle_since_before_midnight_drops():
     assert keys_shown_tomorrow("idle") == []
 
 
+def test_spare_session_has_no_card():
+    spec = importlib.util.spec_from_file_location("ccm", CCM_PATH)
+    ccm = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(ccm)
+    tmp = Path(tempfile.mkdtemp())
+    ccm.SESSIONS_DIR, ccm.PROJECTS_DIR = tmp / "sessions", tmp / "projects"
+    ccm.SESSIONS_DIR.mkdir()
+    ccm.PROJECTS_DIR.mkdir()
+    (ccm.SESSIONS_DIR / "1.json").write_text(json.dumps(
+        {"sessionId": "s1", "cwd": "C:/x", "status": "busy", "updatedAt": int(time.time() * 1000), "spare": True}))
+    assert ccm.get_sessions() == [], "a spare background session shows a card"
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):
