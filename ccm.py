@@ -536,7 +536,6 @@ PAGE = """<!DOCTYPE html>
         .agent { color: #cbd5e1; font-size: 0.85rem; margin: 0.25rem 0 0 1rem; }
         /* One line each, never wrapped or cut short; the card edge clips what does not fit. */
         .state, .progress, .agent, .footer { white-space: nowrap; overflow: hidden; }
-        .version { color: #64748b; font-size: 0.9rem; font-weight: normal; }
         .empty, .note { color: #64748b; }
         .usage { color: #cbd5e1; display: flex; flex-wrap: wrap; gap: 0.5rem; }
         .pill { background: #1e293b; padding: 2px 10px; border-radius: 999px; }
@@ -550,7 +549,7 @@ PAGE = """<!DOCTYPE html>
     </style>
 </head>
 <body>
-    <h1>Claude Code Monitor <span class="version">version: __VERSION_TIME__</span></h1>
+    <h1>Claude Code Monitor</h1>
     <div id="sessions">__SESSIONS__</div>
     <p class="note" id="note"></p>
     <script>
@@ -629,8 +628,7 @@ class MonitorHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.end_headers()
         title, cards = build_title_and_cards(update_sessions())
-        version_time = time.strftime("%Y-%m-%d %H:%M", time.localtime(int(VERSION) / 1e9))
-        page = PAGE.replace("__VERSION_TIME__", version_time).replace("__VERSION__", VERSION).replace("__FIRST_PORT__", str(FIRST_PORT)).replace("__TITLE__", title).replace("__SESSIONS__", cards)
+        page = PAGE.replace("__VERSION__", VERSION).replace("__FIRST_PORT__", str(FIRST_PORT)).replace("__TITLE__", title).replace("__SESSIONS__", cards)
         self.wfile.write(page.encode("utf-8"))
 
     def stream_events(self):
