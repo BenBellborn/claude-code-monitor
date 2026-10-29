@@ -28,6 +28,26 @@ def test_prompt_starts_a_monitor_until_one_ran():
     assert hook("SessionStart") == "s1", "a session start (resume) must always start a monitor"
 
 
+def test_prompt_after_clear_keeps_a_closed_window_closed():
+    spec = importlib.util.spec_from_file_location("ccm", CCM_PATH)
+    ccm = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(ccm)
+    tmp = Path(tempfile.mkdtemp())
+    ccm.CACHE = tmp
+    ccm.STARTED_SESSIONS = tmp / "ccm-started-sessions.txt"
+
+    def hook(session, event, source=None):
+        sys.stdin = io.StringIO(json.dumps({"session_id": session, "hook_event_name": event, "source": source}))
+        return ccm.find_hook_session()
+
+    ccm.add_started_session("before-clear")  # its window opened, then the user closed it
+    clear_started = hook("after-clear", "SessionStart", "clear")
+    assert hook("after-clear", "UserPromptSubmit") is None, "first prompt after /clear starts the monitor again"
+    assert clear_started is None, "/clear reopens the window"
+    hooks = json.loads((CCM_PATH.parent / "hooks" / "hooks.json").read_text())
+    assert "clear" in hooks["hooks"]["SessionStart"][0]["matcher"].split("|"), "SessionStart never fires on /clear"
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

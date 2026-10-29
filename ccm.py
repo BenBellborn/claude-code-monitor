@@ -760,6 +760,10 @@ def find_hook_session():
     monitor."""
     event = json.loads(sys.stdin.read() or "{}")
     session = str(event.get("session_id", ""))
+    # /clear gives the same Claude Code session a new id: listed as started, its first prompt keeps a closed window closed.
+    if event.get("hook_event_name") == "SessionStart" and event.get("source") == "clear":
+        add_started_session(session)
+        return None
     if event.get("hook_event_name") == "UserPromptSubmit" and session in read_started_sessions():
         return None
     return session
