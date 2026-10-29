@@ -418,36 +418,39 @@ def render_usage():
 
 # Most agent rows each card has shown; cards pad to it so they grow but never shrink until the script restarts.
 max_agent_rows = {}
+# Scans and render state are read-modify-written; every request thread renders.
+render_lock = threading.Lock()
 
 
 def render_sessions():
     """The tab title and the session cards' HTML."""
-    sessions = get_sessions()
-    cards = []
-    for s in sessions:
-        rows = [
-            f'<div class="agent">● {render_model_effort(a["model"], a["effort"])} - '
-            f'{html.escape(a["type"]) + " - " if a["type"] else ""}{html.escape(a["activity"])}</div>'
-            for a in s["agents"]
-        ]
-        max_agent_rows[s["key"]] = max(max_agent_rows.get(s["key"], 0), len(rows))
-        rows += ['<div class="agent">&nbsp;</div>'] * (max_agent_rows[s["key"]] - len(rows))
-        agents = "".join(rows)
-        detail = html.escape(s["detail"])
-        if s["highlight"]:
-            detail = f'<span class="highlight">{detail}</span>'
-        faded = " faded" if s["color"] == "idle" and time.time() - s["updated"] / 1000 > IDLE_FADE_SECONDS else ""
-        cards.append(
-            f'<div class="card {s["color"]}{faded}" data-key="{html.escape(s["key"])}">'
-            f'<b class="name">{html.escape(s["label"])}</b> - {render_model_effort(s["model"], s["effort"])}'
-            f'<div class="state">Running: {detail}</div>'
-            f'<div class="progress">{STOPPED_LINES.get(s["color"]) or html.escape(s["progress"]) or "&nbsp;"}</div>{agents}'
-            f'<div class="footer">{" | ".join(statuslines.get(s["key"], []) + [html.escape(f) for f in s["footer"]]) or "&nbsp;"}</div></div>'
-        )
-    title = build_title(sessions)
-    if not recent_titles or recent_titles[-1] != title:
-        recent_titles.append(title)
-    return title, ("".join(cards) or '<p class="empty">No sessions today.</p>') + render_usage()
+    with render_lock:
+        sessions = get_sessions()
+        cards = []
+        for s in sessions:
+            rows = [
+                f'<div class="agent">● {render_model_effort(a["model"], a["effort"])} - '
+                f'{html.escape(a["type"]) + " - " if a["type"] else ""}{html.escape(a["activity"])}</div>'
+                for a in s["agents"]
+            ]
+            max_agent_rows[s["key"]] = max(max_agent_rows.get(s["key"], 0), len(rows))
+            rows += ['<div class="agent">&nbsp;</div>'] * (max_agent_rows[s["key"]] - len(rows))
+            agents = "".join(rows)
+            detail = html.escape(s["detail"])
+            if s["highlight"]:
+                detail = f'<span class="highlight">{detail}</span>'
+            faded = " faded" if s["color"] == "idle" and time.time() - s["updated"] / 1000 > IDLE_FADE_SECONDS else ""
+            cards.append(
+                f'<div class="card {s["color"]}{faded}" data-key="{html.escape(s["key"])}">'
+                f'<b class="name">{html.escape(s["label"])}</b> - {render_model_effort(s["model"], s["effort"])}'
+                f'<div class="state">Running: {detail}</div>'
+                f'<div class="progress">{STOPPED_LINES.get(s["color"]) or html.escape(s["progress"]) or "&nbsp;"}</div>{agents}'
+                f'<div class="footer">{" | ".join(statuslines.get(s["key"], []) + [html.escape(f) for f in s["footer"]]) or "&nbsp;"}</div></div>'
+            )
+        title = build_title(sessions)
+        if not recent_titles or recent_titles[-1] != title:
+            recent_titles.append(title)
+        return title, ("".join(cards) or '<p class="empty">No sessions today.</p>') + render_usage()
 
 
 STOPPED_LINES = {
