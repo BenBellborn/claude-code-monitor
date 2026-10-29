@@ -749,8 +749,9 @@ def pin_monitor_window(port):
 
 
 class MonitorServer(ThreadingHTTPServer):
-    # Without this, Windows lets a second server bind a port already in use, so a taken port would never be skipped.
-    allow_reuse_address = False
+    # On Windows SO_REUSEADDR lets a second server bind a port already in use, so a taken port would never be skipped. Posix needs it:
+    # the reloaded server rebinds the port the old one left in TIME_WAIT.
+    allow_reuse_address = sys.platform != "win32"
     daemon_threads = True
 
 
