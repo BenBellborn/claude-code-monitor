@@ -3,7 +3,7 @@
 A small window that shows every Claude Code session you are using, one card per session. It is one Python file, `ccm.py`, with no
 packages to install, shipped as a Claude Code plugin.
 
-![Claude Code Monitor with three sessions: one running, one blocked, one idle](docs/screenshot.png)
+![Claude Code Monitor with three sessions: one running, one blocked, one idle, with progress lines and the Pin on top button](docs/screenshot.png)
 
 ## Install
 1. Install Python 3.10 or newer (see [Python](#python) below).
