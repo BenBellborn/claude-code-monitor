@@ -215,6 +215,9 @@ def prune_session_stores(found, shown):
 def find_session(s, today):
     """The card data of a session shown today, or None for one that is not."""
     status = s.get("status")
+    # "shell": the turn ended but a background shell still runs, so the session still works.
+    if status == "shell":
+        status = "busy"
     # updatedAt moves only on a status change, so a session busy or waiting since before midnight stays.
     if status not in ("busy", "waiting") and datetime.fromtimestamp(s.get("updatedAt", 0) / 1000).date() != today:
         delete_progress_note(s.get("sessionId"))

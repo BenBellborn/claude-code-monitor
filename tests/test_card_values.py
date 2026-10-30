@@ -53,6 +53,8 @@ def test_progress_note_shows_while_busy_or_waiting_and_is_deleted_when_idle():
         return session and session["note"]
 
     assert [note("busy"), note("waiting")] == ["Step 2/4: tests", "Step 2/4: tests"]
+    session = ccm.find_session({"sessionId": "s1", "status": "shell", "updatedAt": 0}, date.today())
+    assert (session["color"], session["note"]) == ("working", "Step 2/4: tests"), "session running a background shell shown idle"
     assert note("idle") == "" and not note_file.exists(), "note of an idle session kept"
     assert note("busy") == "", "earlier task's note shown in a new turn"
     note_file.write_text("old", encoding="utf-8")
