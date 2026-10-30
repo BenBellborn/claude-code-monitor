@@ -1,5 +1,6 @@
 import http.client
 import importlib.util
+import tempfile
 import threading
 from pathlib import Path
 
@@ -18,6 +19,7 @@ def test_only_own_host_reads_the_page():
     ccm = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(ccm)
     ccm.update_sessions = lambda: []
+    ccm.CONFIG_PATH = Path(tempfile.mkdtemp()) / "config.json"
     ccm.build_title_and_cards = lambda sessions: ("T", "<b>SECRET-PROMPT</b>")
     server = ccm.MonitorServer(("127.0.0.1", 0), ccm.MonitorHandler)
     port = server.server_address[1]

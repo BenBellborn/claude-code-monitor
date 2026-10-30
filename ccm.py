@@ -35,6 +35,20 @@ CACHE = Path.home() / ".claude" / "cache"
 # A session writes ccm-progress-<sessionId>.txt here; its text shows under the card while the session is busy or waiting, and
 # the file is deleted once the session is idle.
 PROGRESS_DIR = CACHE / "progress"
+# Colors and the window's last mode, read on every page load; created with the defaults when missing. Kept out of the plugin
+# folder, which a plugin update replaces.
+CONFIG_PATH = Path.home() / ".claude" / "ccm" / "config.json"
+DEFAULT_CONFIG = {
+    "colors": {
+        "background": "#0f172a", "card": "#1e293b", "text": "#f8fafc", "bright": "#ffffff", "light": "#cbd5e1", "muted": "#94a3b8",
+        "dim": "#64748b", "working": "#22c55e", "waiting": "#f59e0b", "idle": "#475569", "stopped": "#dc2626", "highlight": "#fbbf24",
+        # The statusline's ANSI red, yellow and orange, also used for the model and effort.
+        "red": "#ef4444", "yellow": "#eab308", "orange": "#d97757",
+    },
+    "window": {"min": False, "width": 600, "height": 400},
+}
+# A color with < or { must not end the page's style block.
+UNSAFE_CSS = re.compile(r"[<>{};]")
 # The script's modified time at start: the page reloads when the server it talks to has another one.
 VERSION = str(SCRIPT.stat().st_mtime_ns)
 # Tool arguments that best name what a call does, in order of preference (same as the agent-models mod).
@@ -544,45 +558,93 @@ STOPPED_LINES = {
 }
 
 
+def read_saved_config():
+    """The config file as written: {} when it is missing, None when it does not parse."""
+    try:
+        saved = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {}
+    except (OSError, ValueError):
+        return None
+    return saved if isinstance(saved, dict) else None
+
+
+def read_config():
+    """The config file's values over the defaults; a missing file is created with the defaults."""
+    if not CONFIG_PATH.exists():
+        save_config(DEFAULT_CONFIG)
+    saved = read_saved_config() or {}
+    return {key: {**value, **(saved.get(key) if isinstance(saved.get(key), dict) else {})} for key, value in DEFAULT_CONFIG.items()}
+
+
+def save_config(config):
+    try:
+        CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        CONFIG_PATH.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
+    except OSError:
+        pass
+
+
+def save_window_mode(window):
+    """Stores the page's Min/Max and pinned window size; other keys in the request are dropped."""
+    saved = read_saved_config()
+    # A file that does not parse is one the user is editing; it is never overwritten.
+    if saved is None:
+        return
+    if not isinstance(saved.get("window"), dict):
+        saved["window"] = {}
+    if isinstance(window.get("min"), bool):
+        saved["window"]["min"] = window["min"]
+    for key in ("width", "height"):
+        if isinstance(window.get(key), int) and 100 <= window[key] <= 10000:
+            saved["window"][key] = window[key]
+    save_config(saved)
+
+
+def build_color_variables(colors):
+    return " ".join(f"--{key}: {UNSAFE_CSS.sub('', str(colors[key]))};" for key in DEFAULT_CONFIG["colors"])
+
+
 PAGE = """<!DOCTYPE html>
 <html>
 <head>
     <title>__TITLE__</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%23111'/%3E%3Cpolyline points='8,34 20,34 26,18 34,48 40,28 44,34 56,34' fill='none' stroke='%234ade80' stroke-width='5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
     <style>
-        body { font-family: -apple-system, sans-serif; background: #0f172a; color: #f8fafc; padding: 1rem 2rem 2rem; max-width: 900px; margin: auto; }
+        :root { __COLORS__ }
+        body { font-family: -apple-system, sans-serif; background: var(--background); color: var(--text); padding: 1rem 2rem 2rem; max-width: 900px; margin: auto; }
         h1 { margin-top: 0.335em; }
         /* In the tab the buttons float beside the title; in the pinned window they sit in its header row. */
         body > #pin, body > #size { float: right; margin-top: 0.6em; }
         body > #size { margin-right: 0.5rem; }
-        #pin, #size { background: #1e293b; color: #cbd5e1; border: 0; border-radius: 6px; padding: 4px 12px; cursor: pointer; }
-        .card { background: #1e293b; padding: 1rem 15px 1rem 1rem; border-radius: 6px; margin-bottom: 0.75rem; border-left: 4px solid #64748b; box-sizing: border-box; }
-        .working { border-left-color: #22c55e; }
-        .waiting { border-left-color: #f59e0b; }
-        .idle { border-left-color: #475569; }
+        #pin, #size { background: var(--card); color: var(--light); border: 0; border-radius: 6px; padding: 4px 12px; cursor: pointer; }
+        .card { background: var(--card); padding: 1rem 15px 1rem 1rem; border-radius: 6px; margin-bottom: 0.75rem; border-left: 4px solid var(--dim); box-sizing: border-box; }
+        .working { border-left-color: var(--working); }
+        .waiting { border-left-color: var(--waiting); }
+        .idle { border-left-color: var(--idle); }
         .faded { opacity: 0.7; }
-        .state { color: #94a3b8; margin-top: 0.25rem; }
-        .progress, .footer { color: #94a3b8; font-size: 0.85rem; margin-top: 0.15rem; }
-        .agent { color: #cbd5e1; font-size: 0.85rem; margin: 0.25rem 0 0 1rem; }
+        .state { color: var(--muted); margin-top: 0.25rem; }
+        .progress, .footer { color: var(--muted); font-size: 0.85rem; margin-top: 0.15rem; }
+        .agent { color: var(--light); font-size: 0.85rem; margin: 0.25rem 0 0 1rem; }
         /* One line each, never wrapped or cut short; the card edge clips what does not fit. */
-        .progress-note { color: #ffffff; font-size: 0.85rem; margin-top: 0.15rem; }
+        .progress-note { color: var(--bright); font-size: 0.85rem; margin-top: 0.15rem; }
         .state, .progress, .agent, .footer, .progress-note { white-space: nowrap; overflow: hidden; }
-        .empty, .note { color: #64748b; }
-        .usage { color: #cbd5e1; display: flex; flex-wrap: wrap; gap: 0.5rem; }
-        .pill { background: #1e293b; padding: 2px 10px; border-radius: 999px; }
-        .name { color: #ffffff; }
-        .orange { color: #d97757; }
-        .yellow { color: #eab308; }
-        .grey { color: #94a3b8; }
-        .red { color: #ef4444; }
-        .stopped { color: #ffffff; background: #dc2626; padding: 0 4px; border-radius: 3px; font-weight: 600; }
+        .empty, .note { color: var(--dim); }
+        .usage { color: var(--light); display: flex; flex-wrap: wrap; gap: 0.5rem; }
+        .pill { background: var(--card); padding: 2px 10px; border-radius: 999px; }
+        .name { color: var(--bright); }
+        .orange { color: var(--orange); }
+        .yellow { color: var(--yellow); }
+        .grey { color: var(--muted); }
+        .red { color: var(--red); }
+        .stopped { color: var(--bright); background: var(--stopped); padding: 0 4px; border-radius: 3px; font-weight: 600; }
         /* Min: each card is one line with no gaps; the height lock is off, so a card never stays tall. */
         .mini { display: none; }
         #sessions.min .card { padding: 2px 8px; margin: 0; border-radius: 0; min-height: 0 !important; }
         #sessions.min .card > :not(.mini) { display: none; }
         #sessions.min .mini { display: block; white-space: nowrap; overflow: hidden; font-size: 0.9rem; }
-        #sessions.min .idle .mini { color: #94a3b8; }
-        .highlight { color: #0f172a; background: #fbbf24; padding: 0 4px; border-radius: 3px; font-weight: 600; }
+        #sessions.min .idle .mini { color: var(--muted); }
+        .highlight { color: var(--background); background: var(--highlight); padding: 0 4px; border-radius: 3px; font-weight: 600; }
     </style>
 </head>
 <body>
@@ -595,17 +657,17 @@ PAGE = """<!DOCTYPE html>
         const sessions = document.getElementById("sessions"), note = document.getElementById("note"), pin = document.getElementById("pin");
         // Chrome and Edge show the cards in a picture-in-picture window that stays on top.
         pin.hidden = !("documentPictureInPicture" in window);
-        // Min shows each card as one line; the choice holds for the tab and the pinned window, and survives a reload.
-        const size = document.getElementById("size");
+        // Min shows each card as one line, in the tab and the pinned window; it and the pinned window's size are kept in the config file.
+        const size = document.getElementById("size"), windowMode = __WINDOW__;
+        function saveWindowMode() { fetch("/config", { method: "POST", body: JSON.stringify(windowMode) }).catch(() => { }); }
         function setMinimized(min) {
             sessions.classList.toggle("min", min);
             size.textContent = min ? "Max" : "Min";
-            try { localStorage.setItem("ccm-min", min ? "1" : ""); } catch { }
         }
-        size.onclick = () => setMinimized(!sessions.classList.contains("min"));
-        try { setMinimized(localStorage.getItem("ccm-min") === "1"); } catch { }
+        size.onclick = () => { windowMode.min = !windowMode.min; setMinimized(windowMode.min); saveWindowMode(); };
+        setMinimized(windowMode.min);
         pin.onclick = async () => {
-            const pip = await documentPictureInPicture.requestWindow({ width: 600, height: 400 });
+            const pip = await documentPictureInPicture.requestWindow({ width: windowMode.width, height: windowMode.height });
             pip.document.head.append(document.querySelector("style").cloneNode(true));
             const unpin = Object.assign(pin.cloneNode(), { textContent: "Unpin", hidden: false, onclick: () => pip.close() });
             // The browser shows only the address in the title bar, so the window names itself in a row above the cards.
@@ -617,7 +679,13 @@ PAGE = """<!DOCTYPE html>
             header.append(buttons);
             pip.document.body.append(header, sessions, note);
             pin.hidden = true;
-            pip.addEventListener("pagehide", () => { document.querySelector("h1").before(size); document.querySelector("h1").after(sessions, note); pin.hidden = false; });
+            pip.addEventListener("pagehide", () => {
+                Object.assign(windowMode, { width: pip.innerWidth, height: pip.innerHeight });
+                saveWindowMode();
+                document.querySelector("h1").before(size);
+                document.querySelector("h1").after(sessions, note);
+                pin.hidden = false;
+            });
         };
         // A card never shrinks mid-turn: each keeps the tallest height it has had since its session was last idle with no agents.
         const maxHeights = {};
@@ -694,8 +762,27 @@ class MonitorHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.end_headers()
         title, cards = build_title_and_cards(update_sessions())
+        config = read_config()
         page = PAGE.replace("__VERSION__", VERSION).replace("__FIRST_PORT__", str(FIRST_PORT)).replace("__TITLE__", title).replace("__SESSIONS__", cards)
+        page = page.replace("__COLORS__", build_color_variables(config["colors"])).replace("__WINDOW__", json.dumps(config["window"]).replace("<", "\\u003c"))
         self.wfile.write(page.encode("utf-8"))
+
+    def do_POST(self):
+        # Any site's page can post to 127.0.0.1; only the monitor's own page sends its Origin.
+        port = self.server.server_address[1]
+        if self.path != "/config" or self.headers.get("Origin") not in (f"http://{HOST}:{port}", f"http://localhost:{port}"):
+            self.send_error(403)
+            return
+        try:
+            window = json.loads(self.rfile.read(min(int(self.headers.get("Content-Length") or 0), 10000)))
+        except ValueError:
+            window = None
+        if not isinstance(window, dict):
+            self.send_error(400)
+            return
+        save_window_mode(window)
+        self.send_response(204)
+        self.end_headers()
 
     def stream_events(self):
         """Sends the session list whenever it changes, until the browser disconnects."""

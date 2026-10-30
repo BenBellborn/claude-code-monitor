@@ -36,12 +36,15 @@ window.
 - Opens as a tab in your default browser. In Chrome or Edge its "Pin on top" button moves the cards into a picture-in-picture window
   that stays above other windows; closing that window puts them back in the tab.
 - The "Min" button shows each session as one line, `Working/Blocked/Idle - name - progress`; "Max" brings the full cards back. The
-  browser remembers the choice.
+  config file keeps the choice.
+- `~/.claude/ccm/config.json` holds the page colors (`colors`, applied on the next page load) and the last mode (`window`: `min`, and
+  the pinned window's `width` and `height`). It is created with the defaults on the first page load; a plugin update leaves it alone.
+  `red`, `yellow` and `orange` set the statusline's colors.
 - Closing the window stops it (after 20 s). The next session start opens it again.
 - Listens on `127.0.0.1` only, on the first free port from 8080 to 8179.
-- Reads `~/.claude/sessions`, `~/.claude/projects` (transcripts), `~/.claude/settings.json` (`statusLine`) and `~/.claude/cache`. Writes
-  only to `~/.claude/cache`: the last statusline per session and the shared pills, so the cards are filled right after a restart, the
-  sessions it has started for, and a lock file on Mac and Linux.
+- Reads `~/.claude/ccm/config.json`, `~/.claude/sessions`, `~/.claude/projects` (transcripts), `~/.claude/settings.json` (`statusLine`)
+  and `~/.claude/cache`. Besides its config file, writes only to `~/.claude/cache`: the last statusline per session and the shared pills,
+  so the cards are filled right after a restart, the sessions it has started for, and a lock file on Mac and Linux.
 
 ## Needs
 - Claude Code. On Windows also Git for Windows, which Claude Code already needs; the monitor runs your statusline through its bash.
@@ -110,6 +113,7 @@ the next prompt.
   on Mac and Linux run `pkill -f ccm.py`.
 - Remove: `/plugin uninstall ccm@claude-code-monitor`, then delete these files in `~/.claude/cache`: `cc-monitor-statuslines.json`,
   `cc-monitor-statuslines.json.tmp`, `ccm.lock`, `ccm-started-sessions.txt` and `ccm-started-sessions.lock`, and the `progress` folder.
+  Then delete the `~/.claude/ccm` folder.
 
 Or paste one of these prompts into Claude Code.
 
@@ -128,7 +132,8 @@ Remove the Claude Code Monitor completely:
    ccm-started-sessions.txt, ccm-started-sessions.lock, rate-limits.json and the progress folder.
 4. If the script my statusLine.command runs saves rate_limits to rate-limits.json "for ccm.py", remove those lines.
    Change nothing else in it.
-5. Remove the "## Progress" section for the Claude Code Monitor from ~/.claude/CLAUDE.md, if it is there.
+5. Delete the ~/.claude/ccm folder.
+6. Remove the "## Progress" section for the Claude Code Monitor from ~/.claude/CLAUDE.md, if it is there.
 ```
 
 ## Troubleshooting

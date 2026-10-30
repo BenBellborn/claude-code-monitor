@@ -12,6 +12,12 @@ CALL = {"type": "assistant", "effort": "high", "message": {"id": "m1", "model": 
         "content": [{"type": "tool_use", "name": "Grep", "input": {"pattern": "x"}}], "usage": {"input_tokens": 1000, "output_tokens": 5}}}
 
 
+def post_config(port, body, origin):
+    c = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+    c.request("POST", "/config", body=json.dumps(body), headers={"Host": f"127.0.0.1:{port}", **({"Origin": origin} if origin else {})})
+    return c.getresponse().status
+
+
 def get(port, path):
     c = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
     c.request("GET", path, headers={"Host": f"127.0.0.1:{port}"})
@@ -30,6 +36,7 @@ def test_page_and_events_show_cards_pills_and_agent_rows():
     spec.loader.exec_module(ccm)
     tmp = Path(tempfile.mkdtemp())
     ccm.SESSIONS_DIR, ccm.PROJECTS_DIR = tmp / "sessions", tmp / "projects"
+    ccm.CONFIG_PATH = tmp / "ccm" / "config.json"
     ccm.SESSIONS_DIR.mkdir()
     sub = ccm.PROJECTS_DIR / "p" / "s1" / "subagents"
     sub.mkdir(parents=True)
@@ -55,6 +62,18 @@ def test_page_and_events_show_cards_pills_and_agent_rows():
         assert '- verifier - Grep: x</div>' in page, page
         assert '<div class="footer"><span class="red">main</span> | 1 tool calls | 1k in / 0k out</div>' in page, page
         assert '<p class="usage"><span class="pill">5h:1%</span></p>' in page, page
+        assert "--working: #22c55e;" in page and json.loads(ccm.CONFIG_PATH.read_text()) == ccm.DEFAULT_CONFIG, "config file not created"
+        assert post_config(port, {"min": True, "width": 500}, f"http://attacker.example:{port}") == 403, "post from another site"
+        assert post_config(port, {"min": True, "width": 500, "height": "x"}, f"http://127.0.0.1:{port}") == 204
+        config = json.loads(ccm.CONFIG_PATH.read_text())
+        config["colors"]["working"] = "#123456"
+        ccm.CONFIG_PATH.write_text(json.dumps(config))
+        page = get(port, "/")
+        assert 'windowMode = {"min": true, "width": 500, "height": 400}' in page, "window mode not saved or not served"
+        assert "--working: #123456;" in page, "edited color not served"
+        ccm.CONFIG_PATH.write_text("{ broken")
+        post_config(port, {"min": False}, f"http://127.0.0.1:{port}")
+        assert ccm.CONFIG_PATH.read_text() == "{ broken", "config being edited overwritten"
         (sub / "agent-a.meta.json").write_text(json.dumps({"agentType": "verifier", "finished": True}))
         version, title, cards = get(port, "/events")
         assert (version, title) == (ccm.VERSION, "\U0001f7e2 1"), (version, title)
