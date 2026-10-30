@@ -520,9 +520,11 @@ def build_title_and_cards(sessions):
         if s["highlight"]:
             detail = f'<span class="highlight">{detail}</span>'
         faded = " faded" if s["color"] == "idle" and time.time() - s["updated"] / 1000 > IDLE_FADE_SECONDS else ""
+        mini = " - ".join(filter(None, [STATUS_WORDS[s["color"]], f'<b class="name">{html.escape(s["label"])}</b>', html.escape(s["note"] or s["progress"])]))
         cards.append(
             f'<div class="card {s["color"]}{faded}" data-key="{html.escape(s["key"])}">'
-            f'<b class="name">{html.escape(s["label"])}</b> - {build_model_effort(s["model"], s["effort"])}'
+            f'<div class="mini">{mini}</div>'
+            f'<div class="head"><b class="name">{html.escape(s["label"])}</b> - {build_model_effort(s["model"], s["effort"])}</div>'
             f'<div class="state">Running: {detail}</div>'
             f'<div class="progress">{STOPPED_LINES.get(s["color"]) or html.escape(s["progress"]) or "&nbsp;"}</div>{agents}'
             f'<div class="footer">{" | ".join(statuslines.get(s["key"], []) + [html.escape(f) for f in s["footer"]]) or "&nbsp;"}</div>'
@@ -531,6 +533,8 @@ def build_title_and_cards(sessions):
     return build_title(sessions), ("".join(cards) or '<p class="empty">No sessions today.</p>') + build_usage_pills()
 
 
+# The status in a card's one-line view, by card color.
+STATUS_WORDS = {"working": "Working", "waiting": '<span class="stopped">Blocked</span>', "idle": '<span class="stopped">Idle</span>'}
 STOPPED_LINES = {
     "waiting": '<span class="stopped">Blocked</span> Awaiting user input',
     "idle": '<span class="stopped">Idle</span>',
@@ -545,7 +549,10 @@ PAGE = """<!DOCTYPE html>
     <style>
         body { font-family: -apple-system, sans-serif; background: #0f172a; color: #f8fafc; padding: 1rem 2rem 2rem; max-width: 900px; margin: auto; }
         h1 { margin-top: 0.335em; }
-        #pin { float: right; margin-top: 0.6em; background: #1e293b; color: #cbd5e1; border: 0; border-radius: 6px; padding: 4px 12px; cursor: pointer; }
+        /* In the tab the buttons float beside the title; in the pinned window they sit in its header row. */
+        body > #pin, body > #size { float: right; margin-top: 0.6em; }
+        body > #size { margin-right: 0.5rem; }
+        #pin, #size { background: #1e293b; color: #cbd5e1; border: 0; border-radius: 6px; padding: 4px 12px; cursor: pointer; }
         .card { background: #1e293b; padding: 1rem 15px 1rem 1rem; border-radius: 6px; margin-bottom: 0.75rem; border-left: 4px solid #64748b; box-sizing: border-box; }
         .working { border-left-color: #22c55e; }
         .waiting { border-left-color: #f59e0b; }
@@ -566,11 +573,18 @@ PAGE = """<!DOCTYPE html>
         .grey { color: #94a3b8; }
         .red { color: #ef4444; }
         .stopped { color: #ffffff; background: #dc2626; padding: 0 4px; border-radius: 3px; font-weight: 600; }
+        /* Min: each card is one line with no gaps; the height lock is off, so a card never stays tall. */
+        .mini { display: none; }
+        #sessions.min .card { padding: 2px 8px; margin: 0; border-radius: 0; min-height: 0 !important; }
+        #sessions.min .card > :not(.mini) { display: none; }
+        #sessions.min .mini { display: block; white-space: nowrap; overflow: hidden; font-size: 0.9rem; }
+        #sessions.min .idle .mini { color: #94a3b8; }
         .highlight { color: #0f172a; background: #fbbf24; padding: 0 4px; border-radius: 3px; font-weight: 600; }
     </style>
 </head>
 <body>
     <button id="pin" hidden>Pin on top</button>
+    <button id="size">Min</button>
     <h1>Claude Code Monitor</h1>
     <div id="sessions">__SESSIONS__</div>
     <p class="note" id="note"></p>
@@ -578,18 +592,29 @@ PAGE = """<!DOCTYPE html>
         const sessions = document.getElementById("sessions"), note = document.getElementById("note"), pin = document.getElementById("pin");
         // Chrome and Edge show the cards in a picture-in-picture window that stays on top.
         pin.hidden = !("documentPictureInPicture" in window);
+        // Min shows each card as one line; the choice holds for the tab and the pinned window, and survives a reload.
+        const size = document.getElementById("size");
+        function setMinimized(min) {
+            sessions.classList.toggle("min", min);
+            size.textContent = min ? "Max" : "Min";
+            try { localStorage.setItem("ccm-min", min ? "1" : ""); } catch { }
+        }
+        size.onclick = () => setMinimized(!sessions.classList.contains("min"));
+        try { setMinimized(localStorage.getItem("ccm-min") === "1"); } catch { }
         pin.onclick = async () => {
             const pip = await documentPictureInPicture.requestWindow({ width: 600, height: 400 });
             pip.document.head.append(document.querySelector("style").cloneNode(true));
             const unpin = Object.assign(pin.cloneNode(), { textContent: "Unpin", hidden: false, onclick: () => pip.close() });
-            unpin.style.margin = "0";
             // The browser shows only the address in the title bar, so the window names itself in a row above the cards.
             const header = Object.assign(pip.document.createElement("div"), { textContent: "Claude Code Monitor" });
             header.style.cssText = "display: flex; justify-content: space-between; align-items: center; font-weight: 600; margin-bottom: 0.5rem;";
-            header.append(unpin);
+            const buttons = pip.document.createElement("span");
+            buttons.style.cssText = "display: flex; gap: 0.5rem;";
+            buttons.append(size, unpin);
+            header.append(buttons);
             pip.document.body.append(header, sessions, note);
             pin.hidden = true;
-            pip.addEventListener("pagehide", () => { document.querySelector("h1").after(sessions, note); pin.hidden = false; });
+            pip.addEventListener("pagehide", () => { document.querySelector("h1").before(size); document.querySelector("h1").after(sessions, note); pin.hidden = false; });
         };
         // A card never shrinks mid-turn: each keeps the tallest height it has had since its session was last idle with no agents.
         const maxHeights = {};

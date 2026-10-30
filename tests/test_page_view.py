@@ -51,6 +51,7 @@ def test_page_and_events_show_cards_pills_and_agent_rows():
         assert '<b class="name">proj</b> - <span class="yellow">claude-opus-5-5</span>:<span class="yellow">high</span>' in page, page
         assert '<div class="state">Running: <span class="highlight">/fix all</span></div>' in page, page
         assert '<div class="progress">Grep: x · ' in page, page
+        assert '<div class="mini">Working - <b class="name">proj</b> - Grep: x · ' in page, "one-line view of a running card"
         assert '- verifier - Grep: x</div>' in page, page
         assert '<div class="footer"><span class="red">main</span> | 1 tool calls | 1k in / 0k out</div>' in page, page
         assert '<p class="usage"><span class="pill">5h:1%</span></p>' in page, page

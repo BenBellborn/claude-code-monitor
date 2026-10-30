@@ -35,6 +35,8 @@ window.
   at a time; a second start waits up to 25 s for one whose window just closed, then quits.
 - Opens as a tab in your default browser. In Chrome or Edge its "Pin on top" button moves the cards into a picture-in-picture window
   that stays above other windows; closing that window puts them back in the tab.
+- The "Min" button shows each session as one line, `Working/Blocked/Idle - name - progress`; "Max" brings the full cards back. The
+  browser remembers the choice.
 - Closing the window stops it (after 20 s). The next session start opens it again.
 - Listens on `127.0.0.1` only, on the first free port from 8080 to 8179.
 - Reads `~/.claude/sessions`, `~/.claude/projects` (transcripts), `~/.claude/settings.json` (`statusLine`) and `~/.claude/cache`. Writes
