@@ -43,15 +43,20 @@ def test_silent_tool_keeps_previous_activity():
     assert scan(read, handback)["activity"] == "Grep: x"
 
 
-def test_progress_note_shows_only_while_busy_or_waiting():
+def test_progress_note_shows_while_busy_or_waiting_and_is_deleted_when_idle():
     ccm.PROGRESS_DIR = ccm.PROJECTS_DIR = Path(tempfile.mkdtemp())
-    (ccm.PROGRESS_DIR / "ccm-progress-s1.txt").write_text("Step 2/4: tests\n", encoding="utf-8")
+    note_file = ccm.PROGRESS_DIR / "ccm-progress-s1.txt"
+    note_file.write_text("Step 2/4: tests" + chr(10), encoding="utf-8")
 
-    def note(session_id, status):
-        return ccm.find_session({"sessionId": session_id, "status": status, "updatedAt": time.time() * 1000}, date.today())["note"]
+    def note(status, updated=time.time()):
+        session = ccm.find_session({"sessionId": "s1", "status": status, "updatedAt": updated * 1000}, date.today())
+        return session and session["note"]
 
-    got = [note("s1", "busy"), note("s1", "waiting"), note("s1", "idle"), note("s2", "busy")]
-    assert got == ["Step 2/4: tests", "Step 2/4: tests", "", ""], got
+    assert [note("busy"), note("waiting")] == ["Step 2/4: tests", "Step 2/4: tests"]
+    assert note("idle") == "" and not note_file.exists(), "note of an idle session kept"
+    assert note("busy") == "", "earlier task's note shown in a new turn"
+    note_file.write_text("old", encoding="utf-8")
+    assert note("idle", updated=0) is None and not note_file.exists(), "note of an idle session from an earlier day kept"
 
 
 def test_missing_transcript_gives_defaults():

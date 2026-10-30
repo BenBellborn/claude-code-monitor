@@ -83,7 +83,8 @@ every other part goes to the card footer. Model and effort are left out, since t
 is fine: the footer then shows only tool calls and tokens.
 
 ## Progress line
-A session can show its own progress as a white line at the bottom of its card, while it is busy or waiting. It writes the text to
+A session can show its own progress as a white line at the bottom of its card, while it is busy or waiting; the monitor deletes the
+line once the session is idle. It writes the text to
 `~/.claude/cache/progress/ccm-progress-<sessionId>.txt`; Claude Code sets `CLAUDE_CODE_SESSION_ID` in its shell:
 ```bash
 mkdir -p ~/.claude/cache/progress && printf '%s' "Step 2/4: running tests" > ~/.claude/cache/progress/ccm-progress-$CLAUDE_CODE_SESSION_ID.txt

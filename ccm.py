@@ -32,7 +32,8 @@ IDLE_FADE_SECONDS = 10 * 60
 SUBAGENT_GONE_SECONDS = 15 * 60
 SCRIPT = Path(__file__).resolve()
 CACHE = Path.home() / ".claude" / "cache"
-# A session writes ccm-progress-<sessionId>.txt here; its text shows under the card while the session is busy or waiting.
+# A session writes ccm-progress-<sessionId>.txt here; its text shows under the card while the session is busy or waiting, and
+# the file is deleted once the session is idle.
 PROGRESS_DIR = CACHE / "progress"
 # The script's modified time at start: the page reloads when the server it talks to has another one.
 VERSION = str(SCRIPT.stat().st_mtime_ns)
@@ -208,9 +209,13 @@ def prune_session_stores(found, shown):
 
 def find_session(s, today):
     """The card data of a session shown today, or None for one that is not."""
-    # updatedAt moves only on a status change, so a session busy or waiting since before midnight stays.
     status = s.get("status")
-    if status not in ("busy", "waiting") and datetime.fromtimestamp(s.get("updatedAt", 0) / 1000).date() != today:
+    active = status in ("busy", "waiting")
+    # Left in place, the note of an earlier task would show again when the session next works.
+    if not active:
+        delete_progress_note(s.get("sessionId"))
+    # updatedAt moves only on a status change, so a session busy or waiting since before midnight stays.
+    if not active and datetime.fromtimestamp(s.get("updatedAt", 0) / 1000).date() != today:
         return None
     # A spare is a background session started ahead of a job; it has no prompt or transcript yet.
     if s.get("spare"):
@@ -254,7 +259,7 @@ def find_session(s, today):
         "progress": " · ".join(progress),
         "footer": footer,
         "agents": get_active_subagents(transcript) if transcript else [],
-        "note": read_progress_note(s["sessionId"]) if status in ("busy", "waiting") else "",
+        "note": read_progress_note(s["sessionId"]) if active else "",
     }
 
 
@@ -263,6 +268,14 @@ def read_progress_note(session_id):
         return (PROGRESS_DIR / f"ccm-progress-{session_id}.txt").read_text(encoding="utf-8").strip()
     except OSError:
         return ""
+
+
+def delete_progress_note(session_id):
+    # A file the session is writing right now stays; the next render deletes it.
+    try:
+        (PROGRESS_DIR / f"ccm-progress-{session_id}.txt").unlink(missing_ok=True)
+    except OSError:
+        pass
 
 
 def label_sessions(sessions):
