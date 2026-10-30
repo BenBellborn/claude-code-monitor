@@ -2,7 +2,7 @@ import importlib.util
 import json
 import tempfile
 import time
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 CCM_PATH = Path(__file__).resolve().parent.parent / "ccm.py"
@@ -57,6 +57,29 @@ def test_progress_note_shows_while_busy_or_waiting_and_is_deleted_when_idle():
     assert note("busy") == "", "earlier task's note shown in a new turn"
     note_file.write_text("old", encoding="utf-8")
     assert note("idle", updated=0) is None and not note_file.exists(), "note of an idle session from an earlier day kept"
+
+
+def test_waiting_note_shows_an_idle_session_as_waiting_until_the_next_prompt():
+    ccm.PROGRESS_DIR = ccm.PROJECTS_DIR = Path(tempfile.mkdtemp())
+    transcript = ccm.PROJECTS_DIR / "p" / "s1.jsonl"
+    transcript.parent.mkdir()
+
+    def prompt_at(seconds):
+        stamp = datetime.fromtimestamp(seconds, timezone.utc).isoformat().replace("+00:00", "Z")
+        with transcript.open("a", encoding="utf-8") as f:
+            f.write(json.dumps({"type": "user", "origin": {"kind": "human"}, "timestamp": stamp, "message": {"content": "x"}}) + chr(10))
+
+    def card():
+        session = ccm.find_session({"sessionId": "s1", "status": "idle", "updatedAt": time.time() * 1000}, date.today())
+        return session["color"], session["note"]
+
+    prompt_at(time.time() - 60)
+    note_file = ccm.PROGRESS_DIR / "ccm-progress-s1.txt"
+    note_file.write_text("Waiting", encoding="utf-8")
+    assert card() == ("waiting", "Waiting"), "questions shown but the card is not waiting"
+    assert card() == ("waiting", "Waiting") and note_file.exists(), "waiting note deleted before the answer"
+    prompt_at(time.time() + 60)
+    assert card() == ("idle", "") and not note_file.exists(), "waiting note kept after the next prompt"
 
 
 def test_missing_transcript_gives_defaults():

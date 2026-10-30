@@ -86,10 +86,15 @@ def is_prompt(entry):
 def build_turn_progress(totals):
     progress = [totals["activity"]] if totals["activity"] else []
     if totals["turn_start"]:
-        begun = datetime.fromisoformat(totals["turn_start"].replace("Z", "+00:00"))
-        elapsed = int((datetime.now(begun.tzinfo) - begun).total_seconds())
+        elapsed = int(time.time() - get_turn_start_time(totals))
         progress.append(f"{elapsed // 60}m {elapsed % 60:02d}s")
     return progress
+
+
+def get_turn_start_time(totals):
+    """When the session's current turn started, in epoch seconds; 0 before its first prompt."""
+    start = totals.get("turn_start")
+    return datetime.fromisoformat(start.replace("Z", "+00:00")).timestamp() if start else 0
 
 
 def format_tokens(n):
@@ -210,12 +215,9 @@ def prune_session_stores(found, shown):
 def find_session(s, today):
     """The card data of a session shown today, or None for one that is not."""
     status = s.get("status")
-    active = status in ("busy", "waiting")
-    # Left in place, the note of an earlier task would show again when the session next works.
-    if not active:
-        delete_progress_note(s.get("sessionId"))
     # updatedAt moves only on a status change, so a session busy or waiting since before midnight stays.
-    if not active and datetime.fromtimestamp(s.get("updatedAt", 0) / 1000).date() != today:
+    if status not in ("busy", "waiting") and datetime.fromtimestamp(s.get("updatedAt", 0) / 1000).date() != today:
+        delete_progress_note(s.get("sessionId"))
         return None
     # A spare is a background session started ahead of a job; it has no prompt or transcript yet.
     if s.get("spare"):
@@ -224,6 +226,15 @@ def find_session(s, today):
     transcript = next(PROJECTS_DIR.glob(f"*/{s['sessionId']}.jsonl"), None)
     totals = scan_transcript(transcript) if transcript else {"model": "?", "effort": "?"}
     model, effort = totals["model"], totals["effort"]
+    note, written = read_progress_note(s["sessionId"])
+    # A reply that ends with questions writes "Waiting": Claude Code calls the session idle, but it waits for an answer until the
+    # next prompt starts a turn after the note.
+    if note == "Waiting" and written >= get_turn_start_time(totals):
+        status = "waiting"
+    # Left in place, the note of an earlier task would show again when the session next works.
+    elif note == "Waiting" or status not in ("busy", "waiting"):
+        delete_progress_note(s["sessionId"])
+        note = ""
     progress, footer = [], []
     if transcript:
         if status == "busy":
@@ -259,15 +270,17 @@ def find_session(s, today):
         "progress": " · ".join(progress),
         "footer": footer,
         "agents": get_active_subagents(transcript) if transcript else [],
-        "note": read_progress_note(s["sessionId"]) if active else "",
+        "note": note,
     }
 
 
 def read_progress_note(session_id):
+    """The note's text and the time it was written; ("", 0) when there is none."""
+    path = PROGRESS_DIR / f"ccm-progress-{session_id}.txt"
     try:
-        return (PROGRESS_DIR / f"ccm-progress-{session_id}.txt").read_text(encoding="utf-8").strip()
+        return path.read_text(encoding="utf-8").strip(), path.stat().st_mtime
     except OSError:
-        return ""
+        return "", 0
 
 
 def delete_progress_note(session_id):
