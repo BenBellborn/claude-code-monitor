@@ -9,7 +9,6 @@ import sys
 import threading
 import time
 import webbrowser
-from collections import deque
 from datetime import date, datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -21,15 +20,6 @@ PROJECTS_DIR = CLAUDE_DIR / "projects"
 FIRST_PORT = 8080
 # The window URL must name the address the server binds: "localhost" may resolve to ::1 first and reach another app there.
 HOST = "127.0.0.1"
-# Chromium browsers that open a page as its own app window; the first one found is used, else a tab in the default browser.
-APP_BROWSERS = [
-    r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
-    r"C:\Program Files\Google\Chrome\Application\chrome.exe",
-    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-    "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
-    "/Applications/Chromium.app/Contents/MacOS/Chromium",
-    "google-chrome", "chromium", "chromium-browser", "microsoft-edge",
-]
 # A child that outlives this process and the terminal or hook that started it, with no console window.
 DETACHED = {
     "stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL,
@@ -476,13 +466,9 @@ render_lock = threading.Lock()
 
 
 def update_sessions():
-    """Scans every session and records the title the page shows next; returns the sessions to show."""
+    """Scans every session; returns the sessions to show."""
     with render_lock:
-        sessions = get_sessions()
-        title = build_title(sessions)
-        if not recent_titles or recent_titles[-1] != title:
-            recent_titles.append(title)
-        return sessions
+        return get_sessions()
 
 
 def build_title_and_cards(sessions):
@@ -522,6 +508,7 @@ PAGE = """<!DOCTYPE html>
     <style>
         body { font-family: -apple-system, sans-serif; background: #0f172a; color: #f8fafc; padding: 1rem 2rem 2rem; max-width: 900px; margin: auto; }
         h1 { margin-top: 0.335em; }
+        #pin { float: right; margin-top: 0.6em; background: #1e293b; color: #cbd5e1; border: 0; border-radius: 6px; padding: 4px 12px; cursor: pointer; }
         .card { background: #1e293b; padding: 1rem 15px 1rem 1rem; border-radius: 6px; margin-bottom: 0.75rem; border-left: 4px solid #64748b; box-sizing: border-box; }
         .working { border-left-color: #22c55e; }
         .waiting { border-left-color: #f59e0b; }
@@ -545,14 +532,31 @@ PAGE = """<!DOCTYPE html>
     </style>
 </head>
 <body>
+    <button id="pin" hidden>Pin on top</button>
     <h1>Claude Code Monitor</h1>
     <div id="sessions">__SESSIONS__</div>
     <p class="note" id="note"></p>
     <script>
+        const sessions = document.getElementById("sessions"), note = document.getElementById("note"), pin = document.getElementById("pin");
+        // Chrome and Edge show the cards in a picture-in-picture window that stays on top.
+        pin.hidden = !("documentPictureInPicture" in window);
+        pin.onclick = async () => {
+            const pip = await documentPictureInPicture.requestWindow({ width: 600, height: 400 });
+            pip.document.head.append(document.querySelector("style").cloneNode(true));
+            const unpin = Object.assign(pin.cloneNode(), { textContent: "Unpin", hidden: false, onclick: () => pip.close() });
+            unpin.style.margin = "0";
+            // The browser shows only the address in the title bar, so the window names itself in a row above the cards.
+            const header = Object.assign(pip.document.createElement("div"), { textContent: "Claude Code Monitor" });
+            header.style.cssText = "display: flex; justify-content: space-between; align-items: center; font-weight: 600; margin-bottom: 0.5rem;";
+            header.append(unpin);
+            pip.document.body.append(header, sessions, note);
+            pin.hidden = true;
+            pip.addEventListener("pagehide", () => { document.querySelector("h1").after(sessions, note); pin.hidden = false; });
+        };
         // A card never shrinks mid-turn: each keeps the tallest height it has had since its session was last idle with no agents.
         const maxHeights = {};
         function lockCardHeights() {
-            for (const card of document.querySelectorAll(".card[data-key]")) {
+            for (const card of sessions.querySelectorAll(".card[data-key]")) {
                 card.style.minHeight = "";
                 const key = card.dataset.key;
                 if (card.classList.contains("idle") && !card.querySelector(".agent")) delete maxHeights[key];
@@ -575,7 +579,7 @@ PAGE = """<!DOCTYPE html>
             const [version, title, cards] = JSON.parse(e.data);
             if (version !== "__VERSION__") { reloadWhenUp(); return; }
             document.title = title;
-            document.getElementById("sessions").innerHTML = cards;
+            sessions.innerHTML = cards;
             lockCardHeights();
         };
         let scanning = false;
@@ -596,8 +600,8 @@ PAGE = """<!DOCTYPE html>
             }
             scanning = false;
         }
-        events.onerror = () => { document.getElementById("note").textContent = "Disconnected, retrying…"; findMonitor(); };
-        events.onopen = () => { document.getElementById("note").textContent = ""; };
+        events.onerror = () => { note.textContent = "Disconnected, retrying…"; findMonitor(); };
+        events.onopen = () => { note.textContent = ""; };
     </script>
 </body>
 </html>
@@ -696,63 +700,8 @@ def exit_when_window_closed():
             os._exit(0)
 
 
-# The last titles sent; the window still shows the previous one for up to a second after a change.
-recent_titles = deque(maxlen=5)
-
-
 def open_monitor_window(port):
-    url = f"http://{HOST}:{port}/"
-    browser = next((b for b in APP_BROWSERS if Path(b).is_file() or (os.sep not in b and shutil.which(b))), None)
-    if not browser:
-        webbrowser.open_new_tab(url)
-        return
-    # App mode: its own window without tabs or address bar, like an HTA.
-    subprocess.Popen([browser, f"--app={url}", "--window-size=920,700"], **DETACHED)
-
-
-def pin_monitor_window(port):
-    """Keeps the monitor's app window above all other windows, and replaces it when it is stuck on a load error page."""
-    from ctypes import wintypes
-    user32 = ctypes.windll.user32
-    user32.SetWindowPos.argtypes = [wintypes.HWND, wintypes.HWND, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, wintypes.UINT]
-    user32.PostMessageW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
-    user32.GetWindowTextLengthW.argtypes = [wintypes.HWND]
-    user32.GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
-    user32.IsWindowVisible.argtypes = [wintypes.HWND]
-    topmost = wintypes.HWND(-1)
-    no_move_size_activate = 0x0001 | 0x0002 | 0x0010
-    wm_close = 0x0010
-    # An app window whose page failed to load has the bare host as its title; that page has no script to retry.
-    error_title = f"{HOST}:{port}"
-    error_checks = {}
-
-    def pin(hwnd, _):
-        buffer = ctypes.create_unicode_buffer(user32.GetWindowTextLengthW(hwnd) + 1)
-        user32.GetWindowTextW(hwnd, buffer, len(buffer))
-        if not user32.IsWindowVisible(hwnd):
-            return True
-        # Exact title: an Edge browser window with the monitor in a tab adds " - Microsoft Edge" and stays unpinned.
-        if buffer.value in recent_titles:
-            user32.SetWindowPos(hwnd, topmost, 0, 0, 0, 0, no_move_size_activate)
-        if buffer.value == error_title:
-            seen_error[hwnd] = error_checks.get(hwnd, 0) + 1
-        return True
-
-    callback = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)(pin)
-    while True:
-        seen_error = {}
-        user32.EnumWindows(callback, 0)
-        error_checks = seen_error
-        # Two checks in a row (3-6 s) on the error page: a page load mid-restart would have recovered by now.
-        for hwnd in [h for h, n in error_checks.items() if n >= 2]:
-            user32.PostMessageW(hwnd, wm_close, 0, 0)
-            del error_checks[hwnd]
-            # A browser that fails to start leaves no window, so the monitor exits as when the window closes.
-            try:
-                open_monitor_window(port)
-            except OSError:
-                pass
-        time.sleep(3)
+    webbrowser.open_new_tab(f"http://{HOST}:{port}/")
 
 
 class MonitorServer(ThreadingHTTPServer):
@@ -849,8 +798,6 @@ if __name__ == "__main__":
     threading.Thread(target=restart_on_new_version, args=(port,), daemon=True).start()
     threading.Thread(target=run_statuslines, daemon=True).start()
     threading.Thread(target=exit_when_window_closed, daemon=True).start()
-    if sys.platform == "win32":
-        threading.Thread(target=pin_monitor_window, args=(port,), daemon=True).start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:

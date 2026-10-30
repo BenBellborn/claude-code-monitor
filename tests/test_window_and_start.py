@@ -1,4 +1,3 @@
-import ctypes
 import importlib.util
 import os
 import socket
@@ -11,10 +10,6 @@ from pathlib import Path
 CCM_PATH = Path(__file__).resolve().parent.parent / "ccm.py"
 
 
-class Stop(Exception):
-    pass
-
-
 def load():
     spec = importlib.util.spec_from_file_location("ccm", CCM_PATH)
     ccm = importlib.util.module_from_spec(spec)
@@ -22,58 +17,12 @@ def load():
     return ccm
 
 
-def test_window_opens_as_an_app_window_else_as_a_browser_tab():
+def test_window_opens_as_a_browser_tab():
     ccm = load()
     opened = []
-    ccm.subprocess = types.SimpleNamespace(Popen=lambda command, **kwargs: opened.append(command))
     ccm.webbrowser = types.SimpleNamespace(open_new_tab=opened.append)
-    browser = Path(tempfile.mkdtemp()) / "chrome.exe"
-    browser.write_text("")
-    ccm.APP_BROWSERS = [str(browser.with_name("missing.exe")), "no-such-browser-on-path", str(browser)]
     ccm.open_monitor_window(8080)
-    ccm.APP_BROWSERS = ["no-such-browser-on-path"]
-    ccm.open_monitor_window(8081)
-    assert opened == [[str(browser), "--app=http://127.0.0.1:8080/", "--window-size=920,700"], "http://127.0.0.1:8081/"], opened
-
-
-def test_pin_keeps_the_monitor_on_top_and_replaces_a_window_stuck_on_an_error_page():
-    ccm = load()
-    ccm.recent_titles.append("CCM 1")
-    # hwnd: (title, visible). 2 is an Edge window with the monitor in a tab; 3 is hidden.
-    windows = {1: ("CCM 1", True), 2: ("CCM 1 - Microsoft Edge", True), 3: ("CCM 1", False), 4: ("127.0.0.1:8080", True)}
-    pinned, closed, reopened, sleeps = [], [], [], [0]
-
-    def get_text(hwnd, buffer, size):
-        buffer.value = windows[hwnd][0]
-
-    def enum_windows(callback, _):
-        for hwnd in list(windows):
-            callback(hwnd, 0)
-
-    def reopen(port):
-        reopened.append(port)
-        raise OSError("browser failed to start")
-
-    def sleep(_):
-        sleeps[0] += 1
-        if sleeps[0] == 2:
-            raise Stop
-
-    user32 = types.SimpleNamespace(
-        GetWindowTextLengthW=lambda hwnd: len(windows[hwnd][0]), GetWindowTextW=get_text, IsWindowVisible=lambda hwnd: windows[hwnd][1],
-        SetWindowPos=lambda hwnd, *args: pinned.append(hwnd), PostMessageW=lambda hwnd, message, *args: closed.append((hwnd, message)),
-        EnumWindows=enum_windows,
-    )
-    ccm.ctypes = types.SimpleNamespace(windll=types.SimpleNamespace(user32=user32), WINFUNCTYPE=lambda *types: lambda f: f,
-                                       create_unicode_buffer=ctypes.create_unicode_buffer, c_int=ctypes.c_int)
-    ccm.time = types.SimpleNamespace(sleep=sleep)
-    ccm.open_monitor_window = reopen
-    try:
-        ccm.pin_monitor_window(8080)
-    except Stop:
-        pass
-    assert pinned == [1, 1], f"pinned {pinned}"
-    assert (closed, reopened) == ([(4, 0x0010)], [8080]), f"closed {closed}, reopened {reopened}: an error page is replaced on its second check"
+    assert opened == ["http://127.0.0.1:8080/"], opened
 
 
 def test_free_server_skips_a_taken_port():
@@ -209,7 +158,7 @@ def run_main(ccm, *args, detached=True):
             os.environ["CCM_DETACHED"] = flag
 
 
-THREADS = ["restart_on_new_version", "run_statuslines", "exit_when_window_closed", "pin_monitor_window"]
+THREADS = ["restart_on_new_version", "run_statuslines", "exit_when_window_closed"]
 
 
 def test_start_relaunches_itself_detached():

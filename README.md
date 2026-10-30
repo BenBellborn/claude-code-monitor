@@ -33,8 +33,8 @@ window.
 ## How it behaves
 - Starts with every new or resumed Claude Code session (a `SessionStart` hook). Only one runs
   at a time; a second start waits up to 25 s for one whose window just closed, then quits.
-- Opens as its own app window (no tabs, no address bar) in Edge, Chrome or Chromium; without one of those, as a tab in your default
-  browser.
+- Opens as a tab in your default browser. In Chrome or Edge its "Pin on top" button moves the cards into a picture-in-picture window
+  that stays above other windows; closing that window puts them back in the tab.
 - Closing the window stops it (after 20 s). The next session start opens it again.
 - Listens on `127.0.0.1` only, on the first free port from 8080 to 8179.
 - Reads `~/.claude/sessions`, `~/.claude/projects` (transcripts), `~/.claude/settings.json` (`statusLine`) and `~/.claude/cache`. Writes
@@ -44,14 +44,13 @@ window.
 ## Needs
 - Claude Code. On Windows also Git for Windows, which Claude Code already needs; the monitor runs your statusline through its bash.
 - Python 3.10 or newer, as `python3` or `python` on the PATH. Standard library only.
-- Optional: Edge, Chrome or Chromium for the app window.
+- Optional: Chrome or Edge for the "Pin on top" button.
 
 | | Windows | Mac, Linux |
 |---|---|---|
 | Cards, statusline, title counts | yes | yes |
 | One monitor at a time, closes with its window | yes | yes |
-| App window | Edge or Chrome | Chrome, Edge or Chromium |
-| Always on top, blank window replaced | yes | no |
+| "Pin on top" button | Chrome, Edge | Chrome, Edge |
 | Tested | yes | not yet |
 
 ## Python

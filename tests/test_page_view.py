@@ -47,7 +47,7 @@ def test_page_and_events_show_cards_pills_and_agent_rows():
         page = get(port, "/")
         assert "<title>\U0001f7e2 1</title>" in page, page
         assert "<h1>Claude Code Monitor</h1>" in page and f'"{ccm.VERSION}"' in page, "version label shown or reload check gone"
-        assert list(ccm.recent_titles) == ["\U0001f7e2 1"], ccm.recent_titles
+        assert 'pin.hidden = !("documentPictureInPicture" in window);' in page, "pin button not offered on every OS"
         assert '<b class="name">proj</b> - <span class="yellow">claude-opus-5-5</span>:<span class="yellow">high</span>' in page, page
         assert '<div class="state">Running: <span class="highlight">/fix all</span></div>' in page, page
         assert '<div class="progress">Grep: x · ' in page, page
