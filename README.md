@@ -84,7 +84,7 @@ is fine: the footer then shows only tool calls and tokens.
 
 ## Progress line
 A session can show its own progress as a white line at the bottom of its card, while it is busy or waiting; the monitor deletes the
-line once the session is idle. The line `Waiting` instead shows an idle session as waiting, until its next prompt; a session that
+line once the session is idle. The line `Input needed` instead shows an idle session as waiting, until its next prompt; a session that
 ends its reply with questions writes it. A session writes the text to
 `~/.claude/cache/progress/ccm-progress-<sessionId>.txt`; Claude Code sets `CLAUDE_CODE_SESSION_ID` in its shell:
 ```bash
@@ -99,7 +99,7 @@ Change nothing else in it.
 In a task of 3 or more steps, at the start of each step, write one short line (`Step 2/4: running tests`) for the Claude Code
 Monitor. Not in a subagent: it shares the session's file.
 `mkdir -p ~/.claude/cache/progress && printf '%s' "<line>" > ~/.claude/cache/progress/ccm-progress-$CLAUDE_CODE_SESSION_ID.txt`
-Before a reply that ends with open questions, write `Waiting` as the line: the monitor shows the session as waiting until
+Before a reply that ends with open questions, write `Input needed` as the line: the monitor shows the session as waiting until
 the next prompt.
 ```
 

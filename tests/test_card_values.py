@@ -75,9 +75,9 @@ def test_waiting_note_shows_an_idle_session_as_waiting_until_the_next_prompt():
 
     prompt_at(time.time() - 60)
     note_file = ccm.PROGRESS_DIR / "ccm-progress-s1.txt"
-    note_file.write_text("Waiting", encoding="utf-8")
-    assert card() == ("waiting", "Waiting"), "questions shown but the card is not waiting"
-    assert card() == ("waiting", "Waiting") and note_file.exists(), "waiting note deleted before the answer"
+    note_file.write_text("Input needed", encoding="utf-8")
+    assert card() == ("waiting", "Input needed"), "questions shown but the card is not waiting"
+    assert card() == ("waiting", "Input needed") and note_file.exists(), "waiting note deleted before the answer"
     prompt_at(time.time() + 60)
     assert card() == ("idle", "") and not note_file.exists(), "waiting note kept after the next prompt"
 

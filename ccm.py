@@ -227,12 +227,12 @@ def find_session(s, today):
     totals = scan_transcript(transcript) if transcript else {"model": "?", "effort": "?"}
     model, effort = totals["model"], totals["effort"]
     note, written = read_progress_note(s["sessionId"])
-    # A reply that ends with questions writes "Waiting": Claude Code calls the session idle, but it waits for an answer until the
+    # A reply that ends with questions writes "Input needed": Claude Code calls the session idle, but it waits for an answer until the
     # next prompt starts a turn after the note.
-    if note == "Waiting" and written >= get_turn_start_time(totals):
+    if note == "Input needed" and written >= get_turn_start_time(totals):
         status = "waiting"
     # Left in place, the note of an earlier task would show again when the session next works.
-    elif note == "Waiting" or status not in ("busy", "waiting"):
+    elif note == "Input needed" or status not in ("busy", "waiting"):
         delete_progress_note(s["sessionId"])
         note = ""
     progress, footer = [], []
