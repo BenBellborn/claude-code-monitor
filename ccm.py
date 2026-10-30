@@ -32,6 +32,8 @@ IDLE_FADE_SECONDS = 10 * 60
 SUBAGENT_GONE_SECONDS = 15 * 60
 SCRIPT = Path(__file__).resolve()
 CACHE = Path.home() / ".claude" / "cache"
+# A session writes ccm-progress-<sessionId>.txt here; its text shows under the card while the session is busy or waiting.
+PROGRESS_DIR = CACHE / "progress"
 # The script's modified time at start: the page reloads when the server it talks to has another one.
 VERSION = str(SCRIPT.stat().st_mtime_ns)
 # Tool arguments that best name what a call does, in order of preference (same as the agent-models mod).
@@ -252,7 +254,15 @@ def find_session(s, today):
         "progress": " · ".join(progress),
         "footer": footer,
         "agents": get_active_subagents(transcript) if transcript else [],
+        "note": read_progress_note(s["sessionId"]) if status in ("busy", "waiting") else "",
     }
+
+
+def read_progress_note(session_id):
+    try:
+        return (PROGRESS_DIR / f"ccm-progress-{session_id}.txt").read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
 
 
 def label_sessions(sessions):
@@ -489,7 +499,8 @@ def build_title_and_cards(sessions):
             f'<b class="name">{html.escape(s["label"])}</b> - {build_model_effort(s["model"], s["effort"])}'
             f'<div class="state">Running: {detail}</div>'
             f'<div class="progress">{STOPPED_LINES.get(s["color"]) or html.escape(s["progress"]) or "&nbsp;"}</div>{agents}'
-            f'<div class="footer">{" | ".join(statuslines.get(s["key"], []) + [html.escape(f) for f in s["footer"]]) or "&nbsp;"}</div></div>'
+            f'<div class="footer">{" | ".join(statuslines.get(s["key"], []) + [html.escape(f) for f in s["footer"]]) or "&nbsp;"}</div>'
+            f'{f"<div class=\"progress-note\">{html.escape(s["note"])}</div>" if s["note"] else ""}</div>'
         )
     return build_title(sessions), ("".join(cards) or '<p class="empty">No sessions today.</p>') + build_usage_pills()
 
@@ -518,7 +529,8 @@ PAGE = """<!DOCTYPE html>
         .progress, .footer { color: #94a3b8; font-size: 0.85rem; margin-top: 0.15rem; }
         .agent { color: #cbd5e1; font-size: 0.85rem; margin: 0.25rem 0 0 1rem; }
         /* One line each, never wrapped or cut short; the card edge clips what does not fit. */
-        .state, .progress, .agent, .footer { white-space: nowrap; overflow: hidden; }
+        .progress-note { color: #ffffff; font-size: 0.85rem; margin-top: 0.15rem; }
+        .state, .progress, .agent, .footer, .progress-note { white-space: nowrap; overflow: hidden; }
         .empty, .note { color: #64748b; }
         .usage { color: #cbd5e1; display: flex; flex-wrap: wrap; gap: 0.5rem; }
         .pill { background: #1e293b; padding: 2px 10px; border-radius: 999px; }

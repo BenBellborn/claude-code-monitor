@@ -1,6 +1,8 @@
 import importlib.util
 import json
 import tempfile
+import time
+from datetime import date
 from pathlib import Path
 
 CCM_PATH = Path(__file__).resolve().parent.parent / "ccm.py"
@@ -39,6 +41,17 @@ def test_silent_tool_keeps_previous_activity():
     read = {"type": "assistant", "message": {"id": "m1", "model": "m", "content": [{"type": "tool_use", "name": "Grep", "input": {"pattern": "x"}}]}}
     handback = {"type": "assistant", "message": {"id": "m2", "model": "m", "content": [{"type": "tool_use", "name": "SubagentHandback", "input": {}}]}}
     assert scan(read, handback)["activity"] == "Grep: x"
+
+
+def test_progress_note_shows_only_while_busy_or_waiting():
+    ccm.PROGRESS_DIR = ccm.PROJECTS_DIR = Path(tempfile.mkdtemp())
+    (ccm.PROGRESS_DIR / "ccm-progress-s1.txt").write_text("Step 2/4: tests\n", encoding="utf-8")
+
+    def note(session_id, status):
+        return ccm.find_session({"sessionId": session_id, "status": status, "updatedAt": time.time() * 1000}, date.today())["note"]
+
+    got = [note("s1", "busy"), note("s1", "waiting"), note("s1", "idle"), note("s2", "busy")]
+    assert got == ["Step 2/4: tests", "Step 2/4: tests", "", ""], got
 
 
 def test_missing_transcript_gives_defaults():

@@ -82,11 +82,28 @@ The statusline output is split on ` | `. A part that starts with `5h:` or `7d:`,
 every other part goes to the card footer. Model and effort are left out, since the card header shows them. No statusline at all
 is fine: the footer then shows only tool calls and tokens.
 
+## Progress line
+A session can show its own progress as a white line at the bottom of its card, while it is busy or waiting. It writes the text to
+`~/.claude/cache/progress/ccm-progress-<sessionId>.txt`; Claude Code sets `CLAUDE_CODE_SESSION_ID` in its shell:
+```bash
+mkdir -p ~/.claude/cache/progress && printf '%s' "Step 2/4: running tests" > ~/.claude/cache/progress/ccm-progress-$CLAUDE_CODE_SESSION_ID.txt
+```
+To have every session write it, paste this prompt into Claude Code:
+```text
+Add this section to my user-wide ~/.claude/CLAUDE.md, before any section about tools. Create the file if it is missing.
+Change nothing else in it.
+
+## Progress
+In a task of 3 or more steps, at the start of each step, write one short line (`Step 2/4: running tests`) for the Claude Code
+Monitor. Not in a subagent: it shares the session's file.
+`mkdir -p ~/.claude/cache/progress && printf '%s' "<line>" > ~/.claude/cache/progress/ccm-progress-$CLAUDE_CODE_SESSION_ID.txt`
+```
+
 ## Stop or remove
 - Stop: close the window; the process exits within 20 s. By hand: on Windows end the `pythonw.exe` running `ccm.py` in Task Manager;
   on Mac and Linux run `pkill -f ccm.py`.
 - Remove: `/plugin uninstall ccm@claude-code-monitor`, then delete these files in `~/.claude/cache`: `cc-monitor-statuslines.json`,
-  `cc-monitor-statuslines.json.tmp`, `ccm.lock`, `ccm-started-sessions.txt` and `ccm-started-sessions.lock`.
+  `cc-monitor-statuslines.json.tmp`, `ccm.lock`, `ccm-started-sessions.txt` and `ccm-started-sessions.lock`, and the `progress` folder.
 
 Or paste one of these prompts into Claude Code.
 
@@ -102,9 +119,10 @@ Remove the Claude Code Monitor completely:
 1. Stop the process running ccm.py (on Windows the pythonw.exe running it, on Mac and Linux pkill -f ccm.py).
 2. Run claude plugin uninstall ccm@claude-code-monitor, then claude plugin marketplace remove claude-code-monitor.
 3. Delete these files in ~/.claude/cache: cc-monitor-statuslines.json, cc-monitor-statuslines.json.tmp, ccm.lock,
-   ccm-started-sessions.txt, ccm-started-sessions.lock and rate-limits.json.
+   ccm-started-sessions.txt, ccm-started-sessions.lock, rate-limits.json and the progress folder.
 4. If the script my statusLine.command runs saves rate_limits to rate-limits.json "for ccm.py", remove those lines.
    Change nothing else in it.
+5. Remove the "## Progress" section for the Claude Code Monitor from ~/.claude/CLAUDE.md, if it is there.
 ```
 
 ## Troubleshooting
