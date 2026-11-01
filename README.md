@@ -91,7 +91,8 @@ is fine: the footer then shows only tool calls and tokens.
 A session can show its own progress as a white line at the bottom of its card, while it is busy or waiting; the monitor deletes the
 line once the session is idle. The line `Input needed` instead shows an idle session as waiting, until its next prompt; a session that
 ends its reply with questions writes it. A session writes the text to
-`~/.claude/cache/progress/ccm-progress-<sessionId>.txt`; Claude Code sets `CLAUDE_CODE_SESSION_ID` in its shell:
+`~/.claude/cache/progress/ccm-progress-<sessionId>.txt`; Claude Code sets `CLAUDE_CODE_SESSION_ID` in its shell.
+The card keeps room for the line, so its height stays the same when the line comes and goes.
 ```bash
 mkdir -p ~/.claude/cache/progress && printf '%s' "Step 2/4: running tests" > ~/.claude/cache/progress/ccm-progress-$CLAUDE_CODE_SESSION_ID.txt
 ```
@@ -101,8 +102,9 @@ Add this section to my user-wide ~/.claude/CLAUDE.md, before any section about t
 Change nothing else in it.
 
 ## Progress
-In a task of 3 or more steps, at the start of each step, write one short line (`Step 2/4: running tests`) for the Claude Code
-Monitor. Not in a subagent: it shares the session's file.
+At the start of each step of a task, write one short line (`Step 2/4: running tests`) for the Claude Code Monitor; a
+one-step task writes `Step 1/1: <what>`. In a queue or loop of tasks (a /fix all queue, review parts, a list of TODOs, loop runs), start the line with the task:
+`Task 3/5 · Step 2/4: running tests`. Not in a subagent: it shares the session's file.
 `mkdir -p ~/.claude/cache/progress && printf '%s' "<line>" > ~/.claude/cache/progress/ccm-progress-$CLAUDE_CODE_SESSION_ID.txt`
 Before a reply that ends with open questions, write `Input needed` as the line: the monitor shows the session as waiting until
 the next prompt.

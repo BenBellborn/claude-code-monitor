@@ -545,7 +545,8 @@ def build_title_and_cards(sessions):
             f'<div class="state">Working: {detail}</div>'
             f'<div class="progress">{STOPPED_LINES.get(s["color"]) or html.escape(s["progress"]) or "&nbsp;"}</div>{agents}'
             f'<div class="footer">{" | ".join(statuslines.get(s["key"], []) + [html.escape(f) for f in s["footer"]]) or "&nbsp;"}</div>'
-            f'{f"<div class=\"progress-note\">{html.escape(s["note"])}</div>" if s["note"] else ""}</div>'
+            # Always there, so the card keeps its height when a note comes and goes.
+            f'<div class="progress-note">{html.escape(s["note"]) or "&nbsp;"}</div></div>'
         )
     return build_title(sessions), ("".join(cards) or '<p class="empty">No sessions today.</p>') + build_usage_pills()
 
