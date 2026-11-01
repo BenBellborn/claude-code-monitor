@@ -35,17 +35,32 @@ CACHE = Path.home() / ".claude" / "cache"
 # A session writes ccm-progress-<sessionId>.txt here; its text shows under the card while the session is busy or waiting, and
 # the file is deleted once the session is idle.
 PROGRESS_DIR = CACHE / "progress"
-# Colors and the window's last mode, read on every page load; created with the defaults when missing. Kept out of the plugin
-# folder, which a plugin update replaces.
+# The user's own page colors over the theme's, and the window's last mode; created with the defaults when missing. Kept out of
+# the plugin folder, which a plugin update replaces.
 CONFIG_PATH = Path.home() / ".claude" / "ccm" / "config.json"
-DEFAULT_CONFIG = {
-    "colors": {
-        "background": "#0f172a", "card": "#1e293b", "text": "#f8fafc", "bright": "#ffffff", "light": "#cbd5e1", "muted": "#94a3b8",
-        "dim": "#64748b", "working": "#22c55e", "waiting": "#f59e0b", "idle": "#475569", "stopped": "#dc2626", "highlight": "#fbbf24",
-        # The statusline's ANSI red, yellow and orange, also used for the model and effort.
-        "red": "#ef4444", "yellow": "#eab308", "orange": "#d97757",
-    },
-    "window": {"min": False, "width": 600, "height": 400},
+DEFAULT_CONFIG = {"colors": {}, "window": {"min": False, "width": 600, "height": 400}}
+# Claude Code's built-in theme colors, copied from its build: they are compiled in, not kept in a file. The theme has no page
+# background (the terminal sets it), so dark themes get black and light ones white. An -ansi theme uses its plain twin.
+CC_THEMES = {
+    "dark": {"background": "rgb(0,0,0)", "text": "rgb(255,255,255)", "inactive": "rgb(153,153,153)", "subtle": "rgb(80,80,80)",
+             "success": "rgb(78,186,101)", "warning": "rgb(255,193,7)", "error": "rgb(255,107,128)", "claude": "rgb(215,119,87)",
+             "userMessageBackground": "rgb(55, 55, 55)", "rate_limit_fill": "rgb(177,185,249)"},
+    "dark-daltonized": {"background": "rgb(0,0,0)", "text": "rgb(255,255,255)", "inactive": "rgb(153,153,153)", "subtle": "rgb(80,80,80)",
+                        "success": "rgb(51,153,255)", "warning": "rgb(255,204,0)", "error": "rgb(255,102,102)", "claude": "rgb(255,153,51)",
+                        "userMessageBackground": "rgb(55, 55, 55)", "rate_limit_fill": "rgb(153,204,255)"},
+    "light": {"background": "rgb(255,255,255)", "text": "rgb(0,0,0)", "inactive": "rgb(102,102,102)", "subtle": "rgb(175,175,175)",
+              "success": "rgb(44,122,57)", "warning": "rgb(150,108,30)", "error": "rgb(171,43,63)", "claude": "rgb(215,119,87)",
+              "userMessageBackground": "rgb(240, 240, 240)", "rate_limit_fill": "rgb(87,105,247)"},
+    "light-daltonized": {"background": "rgb(255,255,255)", "text": "rgb(0,0,0)", "inactive": "rgb(102,102,102)", "subtle": "rgb(175,175,175)",
+                         "success": "rgb(0,102,153)", "warning": "rgb(255,153,0)", "error": "rgb(204,0,0)", "claude": "rgb(255,153,51)",
+                         "userMessageBackground": "rgb(220, 220, 220)", "rate_limit_fill": "rgb(51,102,255)"},
+}
+# Each page color and the theme color it takes. red, yellow and orange are the statusline's ANSI colors, also used for the model
+# and effort.
+THEME_KEYS = {
+    "background": "background", "card": "userMessageBackground", "text": "text", "bright": "text", "light": "text", "muted": "inactive",
+    "dim": "subtle", "working": "success", "waiting": "warning", "idle": "subtle", "stopped": "error", "highlight": "warning",
+    "red": "error", "yellow": "warning", "orange": "claude",
 }
 # A color with < or { must not end the page's style block.
 UNSAFE_CSS = re.compile(r"[<>{};]")
@@ -602,8 +617,25 @@ def save_window_mode(window):
     save_config(saved)
 
 
-def build_color_variables(colors):
-    return " ".join(f"--{key}: {UNSAFE_CSS.sub('', str(colors[key]))};" for key in DEFAULT_CONFIG["colors"])
+def read_theme():
+    """Claude Code's selected theme as colors by theme key, with a custom theme's overrides on its base."""
+    settings = read_json(CLAUDE_DIR / "settings.json")
+    name = (settings.get("theme") if isinstance(settings, dict) else None) or "dark"
+    overrides = {}
+    if name.startswith("custom:"):
+        custom = read_json(CLAUDE_DIR / "themes" / f"{name.removeprefix('custom:')}.json")
+        custom = custom if isinstance(custom, dict) else {}
+        name, overrides = str(custom.get("base") or "dark"), custom.get("overrides")
+    # An "ansi:" color names a terminal color that CSS does not know.
+    own = {k: v for k, v in overrides.items() if isinstance(v, str) and not v.startswith("ansi:")} if isinstance(overrides, dict) else {}
+    return CC_THEMES.get(name.removesuffix("-ansi"), CC_THEMES["dark"]) | own
+
+
+def build_color_variables():
+    """The page colors as CSS variables: the Claude Code theme's, then the config file's own."""
+    theme = read_theme()
+    colors = {key: theme[source] for key, source in THEME_KEYS.items()} | read_config()["colors"]
+    return ":root { " + " ".join(f"--{key}: {UNSAFE_CSS.sub('', str(colors[key]))};" for key in THEME_KEYS) + " }"
 
 
 PAGE = """<!DOCTYPE html>
@@ -611,8 +643,8 @@ PAGE = """<!DOCTYPE html>
 <head>
     <title>__TITLE__</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%23111'/%3E%3Cpolyline points='8,34 20,34 26,18 34,48 40,28 44,34 56,34' fill='none' stroke='%234ade80' stroke-width='5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+    <style id="colors">__COLORS__</style>
     <style>
-        :root { __COLORS__ }
         body { font-family: -apple-system, sans-serif; background: var(--background); color: var(--text); padding: 1rem 2rem 2rem; max-width: 900px; margin: auto; }
         h1 { margin-top: 0.335em; }
         /* In the tab the buttons float beside the title; in the pinned window they sit in its header row. */
@@ -638,7 +670,7 @@ PAGE = """<!DOCTYPE html>
         .yellow { color: var(--yellow); }
         .grey { color: var(--muted); }
         .red { color: var(--red); }
-        .stopped { color: var(--bright); background: var(--stopped); padding: 0 4px; border-radius: 3px; font-weight: 600; }
+        .stopped { color: #ffffff; background: var(--stopped); padding: 0 4px; border-radius: 3px; font-weight: 600; }
         /* Min: each card is one line with no gaps; the height lock is off, so a card never stays tall. */
         .mini { display: none; }
         #sessions.min .card { padding: 2px 8px; margin: 0; border-radius: 0; min-height: 0 !important; }
@@ -667,9 +699,12 @@ PAGE = """<!DOCTYPE html>
         }
         size.onclick = () => { windowMode.min = !windowMode.min; setMinimized(windowMode.min); saveWindowMode(); };
         setMinimized(windowMode.min);
+        // The theme colors change live, in the tab and the pinned window.
+        let pipColors = null;
         pin.onclick = async () => {
             const pip = await documentPictureInPicture.requestWindow({ width: windowMode.width, height: windowMode.height });
-            pip.document.head.append(document.querySelector("style").cloneNode(true));
+            for (const style of document.querySelectorAll("style")) pip.document.head.append(style.cloneNode(true));
+            pipColors = pip.document.getElementById("colors");
             const unpin = Object.assign(pin.cloneNode(), { textContent: "Unpin", hidden: false, onclick: () => pip.close() });
             // The browser shows only the address in the title bar, so the window names itself in a row above the cards.
             const header = Object.assign(pip.document.createElement("div"), { textContent: "Claude Code Monitor" });
@@ -686,6 +721,7 @@ PAGE = """<!DOCTYPE html>
                 document.querySelector("h1").before(size);
                 document.querySelector("h1").after(sessions, note);
                 pin.hidden = false;
+                pipColors = null;
             });
         };
         // A card never shrinks mid-turn: each keeps the tallest height it has had since its session was last idle with no agents.
@@ -711,10 +747,11 @@ PAGE = """<!DOCTYPE html>
         }
         const events = new EventSource("/events");
         events.onmessage = e => {
-            const [version, title, cards] = JSON.parse(e.data);
+            const [version, title, cards, colors] = JSON.parse(e.data);
             if (version !== "__VERSION__") { reloadWhenUp(); return; }
             document.title = title;
             sessions.innerHTML = cards;
+            for (const style of [document.getElementById("colors"), pipColors]) if (style && style.textContent !== colors) style.textContent = colors;
             lockCardHeights();
         };
         let scanning = false;
@@ -765,7 +802,7 @@ class MonitorHandler(BaseHTTPRequestHandler):
         title, cards = build_title_and_cards(update_sessions())
         config = read_config()
         page = PAGE.replace("__VERSION__", VERSION).replace("__FIRST_PORT__", str(FIRST_PORT)).replace("__TITLE__", title).replace("__SESSIONS__", cards)
-        page = page.replace("__COLORS__", build_color_variables(config["colors"])).replace("__WINDOW__", json.dumps(config["window"]).replace("<", "\\u003c"))
+        page = page.replace("__COLORS__", build_color_variables()).replace("__WINDOW__", json.dumps(config["window"]).replace("<", "\\u003c"))
         self.wfile.write(page.encode("utf-8"))
 
     def do_POST(self):
@@ -796,7 +833,7 @@ class MonitorHandler(BaseHTTPRequestHandler):
         # ponytail: re-reads the session files every second; a file watcher if that ever costs too much.
         try:
             while True:
-                current = [VERSION, *build_title_and_cards(update_sessions())]
+                current = [VERSION, *build_title_and_cards(update_sessions()), build_color_variables()]
                 # An unchanged list still sends a comment line, so a closed window shows up as a failed write.
                 self.wfile.write(f"data: {json.dumps(current)}\n\n".encode("utf-8") if current != last else b":\n\n")
                 self.wfile.flush()

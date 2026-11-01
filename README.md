@@ -37,9 +37,12 @@ window.
   that stays above other windows; closing that window puts them back in the tab.
 - The "Min" button shows each session as one line, `Working/Blocked/Idle - name - progress`; "Max" brings the full cards back. The
   config file keeps the choice.
-- `~/.claude/ccm/config.json` holds the page colors (`colors`, applied on the next page load) and the last mode (`window`: `min`, and
-  the pinned window's `width` and `height`). It is created with the defaults on the first page load; a plugin update leaves it alone.
-  `red`, `yellow` and `orange` set the statusline's colors.
+- The page takes Claude Code's theme (`/theme`, including a custom theme in `~/.claude/themes`) and follows a change within a
+  second. Dark themes get a black page, light ones white; an `-ansi` theme uses its plain twin's colors.
+- `~/.claude/ccm/config.json` holds your own colors over the theme's (`colors`) and the last mode (`window`: `min`, and the pinned
+  window's `width` and `height`). It is created on the first page load; a plugin update leaves it alone. The color keys are
+  `background`, `card`, `text`, `bright`, `light`, `muted`, `dim`, `working`, `waiting`, `idle`, `stopped`, `highlight`, and
+  `red`, `yellow` and `orange` for the statusline's colors, e.g. `"colors": {"working": "#22c55e"}`.
 - Closing the window stops it (after 20 s). The next session start opens it again.
 - Listens on `127.0.0.1` only, on the first free port from 8080 to 8179.
 - Reads `~/.claude/ccm/config.json`, `~/.claude/sessions`, `~/.claude/projects` (transcripts), `~/.claude/settings.json` (`statusLine`)

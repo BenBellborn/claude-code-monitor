@@ -84,6 +84,21 @@ def test_waiting_note_shows_an_idle_session_as_waiting_until_the_next_prompt():
     assert card() == ("idle", "") and not note_file.exists(), "waiting note kept after the next prompt"
 
 
+def test_page_colors_follow_the_claude_code_theme_then_the_config_file():
+    ccm.CLAUDE_DIR = Path(tempfile.mkdtemp())
+    ccm.CONFIG_PATH = ccm.CLAUDE_DIR / "ccm" / "config.json"
+    assert "--background: rgb(0,0,0); --card: rgb(55, 55, 55);" in ccm.build_color_variables(), "no theme set is not dark"
+    (ccm.CLAUDE_DIR / "themes").mkdir()
+    (ccm.CLAUDE_DIR / "themes" / "mine.json").write_text(json.dumps(
+        {"base": "light-ansi", "overrides": {"success": "rgb(1,2,3)", "error": "ansi:red", "userMessageBackground": "#abcdef"}}))
+    (ccm.CLAUDE_DIR / "settings.json").write_text(json.dumps({"theme": "custom:mine"}))
+    colors = ccm.build_color_variables()
+    assert "--working: rgb(1,2,3);" in colors and "--card: #abcdef;" in colors, "custom theme overrides not applied"
+    assert "--background: rgb(255,255,255);" in colors and "--stopped: rgb(171,43,63);" in colors, "base or ansi fallback wrong"
+    ccm.CONFIG_PATH.write_text(json.dumps({"colors": {"working": "#123456</style>"}}))
+    assert "--working: #123456/style;" in ccm.build_color_variables(), "config color does not win or is not cleaned"
+
+
 def test_missing_transcript_gives_defaults():
     totals = ccm.scan_transcript(Path(tempfile.mkdtemp()) / "none.jsonl")
     assert (totals["model"], totals["effort"], totals["context"], totals["activity"]) == ("?", "?", 0, None), totals

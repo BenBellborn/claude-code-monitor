@@ -37,6 +37,7 @@ def test_page_and_events_show_cards_pills_and_agent_rows():
     tmp = Path(tempfile.mkdtemp())
     ccm.SESSIONS_DIR, ccm.PROJECTS_DIR = tmp / "sessions", tmp / "projects"
     ccm.CONFIG_PATH = tmp / "ccm" / "config.json"
+    ccm.CLAUDE_DIR = tmp
     ccm.PROGRESS_DIR = tmp
     (tmp / "ccm-progress-s1.txt").write_text("Task 2/4 · Step 2/2: x", encoding="utf-8")
     ccm.SESSIONS_DIR.mkdir()
@@ -65,7 +66,7 @@ def test_page_and_events_show_cards_pills_and_agent_rows():
         assert '<div class="progress-note">Task 2/4 · Step 2/2: x</div></div>' in page, "progress line missing or not last in the card"
         assert '<div class="footer"><span class="red">main</span> | 1 tool calls | 1k in / 0k out</div>' in page, page
         assert '<p class="usage"><span class="pill">5h:1%</span></p>' in page, page
-        assert "--working: #22c55e;" in page and json.loads(ccm.CONFIG_PATH.read_text()) == ccm.DEFAULT_CONFIG, "config file not created"
+        assert "--working: rgb(78,186,101);" in page and json.loads(ccm.CONFIG_PATH.read_text()) == ccm.DEFAULT_CONFIG, "config file not created"
         assert post_config(port, {"min": True, "width": 500}, f"http://attacker.example:{port}") == 403, "post from another site"
         assert post_config(port, {"min": True, "width": 500, "height": "x"}, f"http://127.0.0.1:{port}") == 204
         config = json.loads(ccm.CONFIG_PATH.read_text())
@@ -78,7 +79,9 @@ def test_page_and_events_show_cards_pills_and_agent_rows():
         post_config(port, {"min": False}, f"http://127.0.0.1:{port}")
         assert ccm.CONFIG_PATH.read_text() == "{ broken", "config being edited overwritten"
         (sub / "agent-a.meta.json").write_text(json.dumps({"agentType": "verifier", "finished": True}))
-        version, title, cards = get(port, "/events")
+        (tmp / "settings.json").write_text(json.dumps({"theme": "light"}))
+        assert "--working: rgb(44,122,57);" in get(port, "/events")[3], "theme change not sent live"
+        version, title, cards, colors = get(port, "/events")
         assert (version, title) == (ccm.VERSION, "\U0001f7e2 1"), (version, title)
         assert "verifier" not in cards, f"finished agent still shown: {cards}"
         (ccm.SESSIONS_DIR / "1.json").write_text(json.dumps(
