@@ -56,7 +56,7 @@ def test_page_and_events_show_cards_pills_and_agent_rows():
         assert "<h1>Claude Code Monitor</h1>" in page and f'"{ccm.VERSION}"' in page, "version label shown or reload check gone"
         assert 'pin.hidden = !("documentPictureInPicture" in window);' in page, "pin button not offered on every OS"
         assert '<b class="name">proj</b> - <span class="yellow">claude-opus-5-5</span>:<span class="yellow">high</span>' in page, page
-        assert '<div class="state">Running: <span class="highlight">/fix all</span></div>' in page, page
+        assert '<div class="state">Working: <span class="highlight">/fix all</span></div>' in page, page
         assert '<div class="progress">Grep: x · ' in page, page
         assert '<div class="mini">Working - <b class="name">proj</b> - Grep: x · ' in page, "one-line view of a running card"
         assert '- verifier - Grep: x</div>' in page, page

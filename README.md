@@ -24,7 +24,7 @@ window.
 - **Title bar:** `🟢 2 ⛔ 1`, sessions running and sessions waiting on you (blocked or idle).
 - **Each card:**
   - session name, model and effort;
-  - `Running:` with the current or last skill or prompt, highlighted;
+  - `Working:` with the current or last skill or prompt, highlighted;
   - a second line: what the session is doing right now and for how long, or a red `Blocked` (awaiting user input) or red `Idle`;
   - one row per subagent that is working;
   - a footer with your own statusline (folder, git branch, ctx%), the turn's tool calls and the tokens in/out.
