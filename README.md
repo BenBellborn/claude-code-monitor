@@ -1,9 +1,11 @@
 # Claude Code Monitor (CCM)
 
+Many Claude Code sessions open? See at a glance which one is working and which one waits on you.
+
 A small window that shows every Claude Code session you are using, one card per session. It is one Python file, `ccm.py`, with no
 packages to install, shipped as a Claude Code plugin.
 
-![Claude Code Monitor with three sessions: one running, one blocked, one idle, with progress lines and the Pin on top button](docs/screenshot.png)
+![Claude Code Monitor with three sessions that go from working to blocked and back, with progress lines and a subagent row](docs/demo.gif)
 
 ## Install
 1. Install Python 3.10 or newer (see [Python](#python) below).
