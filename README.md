@@ -26,7 +26,7 @@ window.
 - **Title bar:** `🟢 2 ⛔ 1`, sessions running and sessions waiting on you (blocked or idle).
 - **Each card:**
   - session name, model and effort;
-  - `Working:` with the current or last skill or prompt, highlighted;
+  - `Busy` with the current or last skill or prompt, highlighted;
   - a second line: what the session is doing right now and for how long, or a red `Blocked` (awaiting user input) or red `Idle`;
   - one row per subagent that is working;
   - a footer with your own statusline (folder, git branch, ctx%), the turn's tool calls and the tokens in/out.
@@ -37,7 +37,7 @@ window.
   at a time; a second start waits up to 25 s for one whose window just closed, then quits.
 - Opens as a tab in your default browser. In Chrome or Edge its "Pin on top" button moves the cards into a picture-in-picture window
   that stays above other windows; closing that window puts them back in the tab.
-- The "Min" button shows each session as one line, `Working/Blocked/Idle - name - progress`; "Max" brings the full cards back. The
+- The "Min" button shows each session as one line, `Busy/Blocked/Idle - name - progress`; "Max" brings the full cards back. The
   config file keeps the choice.
 - The page takes Claude Code's theme (`/theme`, including a custom theme in `~/.claude/themes`) and follows a change within a
   second. Dark themes get a black page, light ones white; an `-ansi` theme uses its plain twin's colors.

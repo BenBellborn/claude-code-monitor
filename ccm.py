@@ -557,7 +557,7 @@ def build_title_and_cards(sessions):
             f'<div class="card {s["color"]}{faded}" data-key="{html.escape(s["key"])}">'
             f'<div class="mini">{mini}</div>'
             f'<div class="head"><b class="name">{html.escape(s["label"])}</b> - {build_model_effort(s["model"], s["effort"])}</div>'
-            f'<div class="state">Working: {detail}</div>'
+            f'<div class="state">Busy {detail}</div>'
             f'<div class="progress">{STOPPED_LINES.get(s["color"]) or html.escape(s["progress"]) or "&nbsp;"}</div>{agents}'
             f'<div class="footer">{" | ".join(statuslines.get(s["key"], []) + [html.escape(f) for f in s["footer"]]) or "&nbsp;"}</div>'
             # Always there, so the card keeps its height when a note comes and goes.
@@ -567,7 +567,7 @@ def build_title_and_cards(sessions):
 
 
 # The status in a card's one-line view, by card color.
-STATUS_WORDS = {"working": "Working", "waiting": '<span class="stopped">Blocked</span>', "idle": '<span class="stopped">Idle</span>'}
+STATUS_WORDS = {"working": "Busy", "waiting": '<span class="stopped">Blocked</span>', "idle": '<span class="stopped">Idle</span>'}
 STOPPED_LINES = {
     "waiting": '<span class="stopped">Blocked</span> Awaiting user input',
     "idle": '<span class="stopped">Idle</span>',
