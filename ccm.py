@@ -645,11 +645,15 @@ PAGE = """<!DOCTYPE html>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%23111'/%3E%3Cpolyline points='8,34 20,34 26,18 34,48 40,28 44,34 56,34' fill='none' stroke='%234ade80' stroke-width='5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
     <style id="colors">__COLORS__</style>
     <style>
-        body { font-family: -apple-system, sans-serif; background: var(--background); color: var(--text); padding: 1rem 2rem 2rem; max-width: 900px; margin: auto; }
+        body { font-family: -apple-system, sans-serif; background: var(--background); color: var(--text); padding: 1rem 2rem 2rem; max-width: 900px; margin: auto; display: flex; flex-direction: column; }
         h1 { margin-top: 0.335em; }
-        /* In the tab the buttons float beside the title; in the pinned window they sit in its header row. */
-        body > #pin, body > #size { float: right; margin-top: 0.6em; }
-        body > #size { margin-right: 0.5rem; }
+        .top { display: flex; justify-content: space-between; align-items: center; }
+        .buttons { display: flex; gap: 0.5rem; }
+        /* Min puts the title row under the cards and statusline pills, with no scrollbar; once the window cuts them off, they hide and the padding goes, so a tiny window still shows the cards. */
+        html:has(#sessions.min) { overflow: hidden; }
+        body:has(> #sessions.min.cut) { padding: 0; }
+        body:has(> #sessions.min) > .top { order: 1; }
+        body:has(> #sessions.min) > #note { order: 2; }
         #pin, #size { background: var(--card); color: var(--light); border: 0; border-radius: 6px; padding: 4px 12px; cursor: pointer; }
         .card { background: var(--card); padding: 1rem 15px 1rem 1rem; border-radius: 6px; margin-bottom: 0.75rem; border-left: 4px solid var(--dim); box-sizing: border-box; }
         .working { border-left-color: var(--working); }
@@ -681,9 +685,7 @@ PAGE = """<!DOCTYPE html>
     </style>
 </head>
 <body>
-    <button id="pin" hidden>Pin on top</button>
-    <button id="size">Min</button>
-    <h1>Claude Code Monitor</h1>
+    <div class="top"><h1>Claude Code Monitor</h1><span class="buttons"><button id="size">Min</button><button id="pin" hidden>Pin on top</button></span></div>
     <div id="sessions">__SESSIONS__</div>
     <p class="note" id="note"></p>
     <script>
@@ -696,7 +698,22 @@ PAGE = """<!DOCTYPE html>
         function setMinimized(min) {
             sessions.classList.toggle("min", min);
             size.textContent = min ? "Max" : "Min";
+            hideCutRows();
         }
+        // Min hides the pills, title and buttons as one group when the window cuts any of them off, and the note on its own; the cards are never hidden.
+        function hideCutRows() {
+            const doc = sessions.ownerDocument, group = [sessions.querySelector(".usage"), doc.querySelector(".top")].filter(Boolean);
+            for (const row of [...group, note, document.querySelector(".top")]) row.style.display = "";
+            sessions.classList.remove("cut");
+            if (!windowMode.min) return;
+            const isCut = row => Math.floor(row.getBoundingClientRect().bottom) > doc.defaultView.innerHeight;
+            if (group.some(isCut)) {
+                for (const row of group) row.style.display = "none";
+                sessions.classList.add("cut");
+            }
+            if (isCut(note)) note.style.display = "none";
+        }
+        window.addEventListener("resize", hideCutRows);
         size.onclick = () => { windowMode.min = !windowMode.min; setMinimized(windowMode.min); saveWindowMode(); };
         setMinimized(windowMode.min);
         // The theme colors change live, in the tab and the pinned window.
@@ -707,21 +724,23 @@ PAGE = """<!DOCTYPE html>
             pipColors = pip.document.getElementById("colors");
             const unpin = Object.assign(pin.cloneNode(), { textContent: "Unpin", hidden: false, onclick: () => pip.close() });
             // The browser shows only the address in the title bar, so the window names itself in a row above the cards.
-            const header = Object.assign(pip.document.createElement("div"), { textContent: "Claude Code Monitor" });
-            header.style.cssText = "display: flex; justify-content: space-between; align-items: center; font-weight: 600; margin-bottom: 0.5rem;";
-            const buttons = pip.document.createElement("span");
-            buttons.style.cssText = "display: flex; gap: 0.5rem;";
+            const header = Object.assign(pip.document.createElement("div"), { className: "top", textContent: "Claude Code Monitor" });
+            header.style.cssText = "font-weight: 600; margin: 0.5rem 0;";
+            const buttons = Object.assign(pip.document.createElement("span"), { className: "buttons" });
             buttons.append(size, unpin);
             header.append(buttons);
             pip.document.body.append(header, sessions, note);
             pin.hidden = true;
+            hideCutRows();
+            pip.addEventListener("resize", hideCutRows);
             pip.addEventListener("pagehide", () => {
                 Object.assign(windowMode, { width: pip.innerWidth, height: pip.innerHeight });
                 saveWindowMode();
-                document.querySelector("h1").before(size);
-                document.querySelector("h1").after(sessions, note);
+                pin.before(size);
+                document.querySelector(".top").after(sessions, note);
                 pin.hidden = false;
                 pipColors = null;
+                hideCutRows();
             });
         };
         // A card never shrinks mid-turn: each keeps the tallest height it has had since its session was last idle with no agents.
@@ -753,6 +772,7 @@ PAGE = """<!DOCTYPE html>
             sessions.innerHTML = cards;
             for (const style of [document.getElementById("colors"), pipColors]) if (style && style.textContent !== colors) style.textContent = colors;
             lockCardHeights();
+            hideCutRows();
         };
         let scanning = false;
         // A restarted monitor may bind another port; move to the first one that answers.
@@ -772,8 +792,8 @@ PAGE = """<!DOCTYPE html>
             }
             scanning = false;
         }
-        events.onerror = () => { note.textContent = "Disconnected, retrying…"; findMonitor(); };
-        events.onopen = () => { note.textContent = ""; };
+        events.onerror = () => { note.textContent = "Disconnected, retrying…"; hideCutRows(); findMonitor(); };
+        events.onopen = () => { note.textContent = ""; hideCutRows(); };
     </script>
 </body>
 </html>
