@@ -43,7 +43,7 @@ window.
   second. Dark themes get a black page, light ones white; an `-ansi` theme uses its plain twin's colors.
 - `~/.claude/ccm/config.json` holds your own colors over the theme's (`colors`) and the last mode (`window`: `min`, and the pinned
   window's `width` and `height`). It is created on the first page load; a plugin update leaves it alone. The color keys are
-  `background`, `card`, `text`, `bright`, `light`, `muted`, `dim`, `working`, `waiting`, `idle`, `stopped`, `highlight`, and
+  `background`, `text`, `bright`, `light`, `muted`, `dim`, `working`, `waiting`, `idle`, `stopped`, `highlight`, and
   `red`, `yellow` and `orange` for the statusline's colors, e.g. `"colors": {"working": "#22c55e"}`.
 - Closing the window stops it (after 20 s). The next session start opens it again.
 - Listens on `127.0.0.1` only, on the first free port from 8080 to 8179.

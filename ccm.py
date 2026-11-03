@@ -44,21 +44,21 @@ DEFAULT_CONFIG = {"colors": {}, "window": {"min": False, "width": 600, "height":
 CC_THEMES = {
     "dark": {"background": "rgb(0,0,0)", "text": "rgb(255,255,255)", "inactive": "rgb(153,153,153)", "subtle": "rgb(80,80,80)",
              "success": "rgb(78,186,101)", "warning": "rgb(255,193,7)", "error": "rgb(255,107,128)", "claude": "rgb(215,119,87)",
-             "userMessageBackground": "rgb(55, 55, 55)", "rate_limit_fill": "rgb(177,185,249)"},
+             "rate_limit_fill": "rgb(177,185,249)"},
     "dark-daltonized": {"background": "rgb(0,0,0)", "text": "rgb(255,255,255)", "inactive": "rgb(153,153,153)", "subtle": "rgb(80,80,80)",
                         "success": "rgb(51,153,255)", "warning": "rgb(255,204,0)", "error": "rgb(255,102,102)", "claude": "rgb(255,153,51)",
-                        "userMessageBackground": "rgb(55, 55, 55)", "rate_limit_fill": "rgb(153,204,255)"},
+                        "rate_limit_fill": "rgb(153,204,255)"},
     "light": {"background": "rgb(255,255,255)", "text": "rgb(0,0,0)", "inactive": "rgb(102,102,102)", "subtle": "rgb(175,175,175)",
               "success": "rgb(44,122,57)", "warning": "rgb(150,108,30)", "error": "rgb(171,43,63)", "claude": "rgb(215,119,87)",
-              "userMessageBackground": "rgb(240, 240, 240)", "rate_limit_fill": "rgb(87,105,247)"},
+              "rate_limit_fill": "rgb(87,105,247)"},
     "light-daltonized": {"background": "rgb(255,255,255)", "text": "rgb(0,0,0)", "inactive": "rgb(102,102,102)", "subtle": "rgb(175,175,175)",
                          "success": "rgb(0,102,153)", "warning": "rgb(255,153,0)", "error": "rgb(204,0,0)", "claude": "rgb(255,153,51)",
-                         "userMessageBackground": "rgb(220, 220, 220)", "rate_limit_fill": "rgb(51,102,255)"},
+                         "rate_limit_fill": "rgb(51,102,255)"},
 }
 # Each page color and the theme color it takes. red, yellow and orange are the statusline's ANSI colors, also used for the model
 # and effort.
 THEME_KEYS = {
-    "background": "background", "card": "userMessageBackground", "text": "text", "bright": "text", "light": "text", "muted": "inactive",
+    "background": "background", "text": "text", "bright": "text", "light": "text", "muted": "inactive",
     "dim": "subtle", "working": "success", "waiting": "warning", "idle": "subtle", "stopped": "error", "highlight": "warning",
     "red": "error", "yellow": "warning", "orange": "claude",
 }
@@ -654,8 +654,8 @@ PAGE = """<!DOCTYPE html>
         body:has(> #sessions.min.cut) { padding: 0; }
         body:has(> #sessions.min) > .top { order: 1; }
         body:has(> #sessions.min) > #note { order: 2; }
-        #pin, #size { background: var(--card); color: var(--light); border: 0; border-radius: 6px; padding: 4px 12px; cursor: pointer; }
-        .card { background: var(--card); padding: 1rem 15px 1rem 1rem; border-radius: 6px; margin-bottom: 0.75rem; border-left: 4px solid var(--dim); box-sizing: border-box; }
+        #pin, #size { background: transparent; color: var(--light); border: 1px solid var(--dim); border-radius: 6px; padding: 4px 12px; cursor: pointer; }
+        .card { border: 1px solid var(--dim); padding: 1rem 15px 1rem 1rem; border-radius: 6px; margin-bottom: 0.75rem; border-left: 4px solid var(--dim); box-sizing: border-box; }
         .working { border-left-color: var(--working); }
         .waiting { border-left-color: var(--waiting); }
         .idle { border-left-color: var(--idle); }
@@ -668,7 +668,7 @@ PAGE = """<!DOCTYPE html>
         .state, .progress, .agent, .footer, .progress-note { white-space: nowrap; overflow: hidden; }
         .empty, .note { color: var(--dim); }
         .usage { color: var(--light); display: flex; flex-wrap: wrap; gap: 0.5rem; }
-        .pill { background: var(--card); padding: 2px 10px; border-radius: 999px; }
+        .pill { border: 1px solid var(--dim); padding: 2px 10px; border-radius: 999px; }
         .name { color: var(--bright); }
         .orange { color: var(--orange); }
         .yellow { color: var(--yellow); }
@@ -677,7 +677,7 @@ PAGE = """<!DOCTYPE html>
         .stopped { color: #ffffff; background: var(--stopped); padding: 0 4px; border-radius: 3px; font-weight: 600; }
         /* Min: each card is one line with no gaps; the height lock is off, so a card never stays tall. */
         .mini { display: none; }
-        #sessions.min .card { padding: 2px 8px; margin: 0; border-radius: 0; min-height: 0 !important; }
+        #sessions.min .card { padding: 2px 8px; margin: 0; border-radius: 0; border-width: 0 0 1px 4px; min-height: 0 !important; }
         #sessions.min .card > :not(.mini) { display: none; }
         #sessions.min .mini { display: block; white-space: nowrap; overflow: hidden; font-size: 0.9rem; }
         #sessions.min .idle .mini { color: var(--muted); }
