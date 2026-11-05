@@ -49,6 +49,16 @@ def test_new_prompt_clears_the_last_turns_activity():
     assert scan(read, prompt)["activity"] is None, "last turn's tool call shown in the new turn"
 
 
+def test_note_of_an_ended_session_is_deleted():
+    ccm.PROGRESS_DIR = Path(tempfile.mkdtemp())
+    ccm.SESSIONS_DIR, ccm.PROJECTS_DIR = Path(tempfile.mkdtemp()), Path(tempfile.mkdtemp())
+    (ccm.SESSIONS_DIR / "1.json").write_text(json.dumps({"sessionId": "live", "cwd": "C:/x", "status": "busy", "updatedAt": time.time() * 1000}))
+    for session_id in ("live", "ended"):
+        (ccm.PROGRESS_DIR / f"ccm-progress-{session_id}.txt").write_text("Step 1/1: x", encoding="utf-8")
+    ccm.get_sessions()
+    assert sorted(p.name for p in ccm.PROGRESS_DIR.iterdir()) == ["ccm-progress-live.txt"], "ended session's note kept or live one deleted"
+
+
 def test_progress_note_shows_while_busy_or_waiting_and_is_deleted_when_idle():
     ccm.PROGRESS_DIR = ccm.PROJECTS_DIR = Path(tempfile.mkdtemp())
     note_file = ccm.PROGRESS_DIR / "ccm-progress-s1.txt"

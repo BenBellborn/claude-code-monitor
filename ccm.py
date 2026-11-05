@@ -212,11 +212,14 @@ def get_active_subagents(transcript):
 def get_sessions():
     today = date.today()
     sessions = []
+    live_ids = set()
     skipped = False
     for path in SESSIONS_DIR.glob("*.json"):
         # A session file is Claude Code's: one that fails to read or holds unexpected values must not end the render.
         try:
-            session = find_session(json.loads(path.read_text(encoding="utf-8")), today)
+            data = json.loads(path.read_text(encoding="utf-8"))
+            live_ids.add(data.get("sessionId"))
+            session = find_session(data, today)
         except Exception as e:
             print(f"Session {path.name} skipped: {e!r}")
             skipped = True
@@ -227,6 +230,7 @@ def get_sessions():
     # A file read mid-rewrite hides its session for one render; its footer and scans stay for the next.
     if not skipped:
         prune_session_stores({s["key"] for s in sessions}, {s["key"] for s in shown})
+        prune_progress_notes(live_ids)
     return shown
 
 
@@ -325,6 +329,14 @@ def delete_progress_note(session_id):
         (PROGRESS_DIR / f"ccm-progress-{session_id}.txt").unlink(missing_ok=True)
     except OSError:
         pass
+
+
+def prune_progress_notes(live_ids):
+    """Deletes the notes of ended sessions, so a resumed session does not show its old note."""
+    for path in PROGRESS_DIR.glob("ccm-progress-*.txt"):
+        session_id = path.stem.removeprefix("ccm-progress-")
+        if session_id not in live_ids:
+            delete_progress_note(session_id)
 
 
 def label_sessions(sessions):
