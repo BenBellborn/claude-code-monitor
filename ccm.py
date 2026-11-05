@@ -260,9 +260,13 @@ def find_session(s, today):
     model, effort = totals["model"], totals["effort"]
     note, written = read_progress_note(s["sessionId"])
     # A reply that ends with questions writes "Input needed": Claude Code calls the session idle, but it waits for an answer until the
-    # next prompt starts a turn after the note.
+    # next prompt starts a turn after the note. A subagent report or task notification can start a turn with no prompt: the session
+    # then shows busy, and the note waits for that turn to end.
     if note == "Input needed" and written >= get_turn_start_time(totals):
-        status = "waiting"
+        if status == "busy":
+            note = ""
+        else:
+            status = "waiting"
     # Left in place, the note of an earlier task would show again when the session next works.
     elif note == "Input needed" or status not in ("busy", "waiting"):
         delete_progress_note(s["sessionId"])

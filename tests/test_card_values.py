@@ -77,8 +77,8 @@ def test_waiting_note_shows_an_idle_session_as_waiting_until_the_next_prompt():
         with transcript.open("a", encoding="utf-8") as f:
             f.write(json.dumps({"type": "user", "origin": {"kind": "human"}, "timestamp": stamp, "message": {"content": "x"}}) + chr(10))
 
-    def card():
-        session = ccm.find_session({"sessionId": "s1", "status": "idle", "updatedAt": time.time() * 1000}, date.today())
+    def card(status="idle"):
+        session = ccm.find_session({"sessionId": "s1", "status": status, "updatedAt": time.time() * 1000}, date.today())
         return session["color"], session["note"]
 
     prompt_at(time.time() - 60)
@@ -86,6 +86,8 @@ def test_waiting_note_shows_an_idle_session_as_waiting_until_the_next_prompt():
     note_file.write_text("Input needed", encoding="utf-8")
     assert card() == ("waiting", "Input needed"), "questions shown but the card is not waiting"
     assert card() == ("waiting", "Input needed") and note_file.exists(), "waiting note deleted before the answer"
+    assert card("busy") == ("working", "") and note_file.exists(), "turn started by a subagent report shown blocked, or note lost"
+    assert card() == ("waiting", "Input needed"), "questions still open after that turn but the card is not waiting"
     prompt_at(time.time() + 60)
     assert card() == ("idle", "") and not note_file.exists(), "waiting note kept after the next prompt"
 
