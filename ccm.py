@@ -647,6 +647,86 @@ def save_window_mode(window):
     save_config(saved)
 
 
+
+
+def focus_session_window(key):
+    """Brings the window a session runs in to the front, e.g. Windows Terminal or Visual Studio; a terminal's tab is not selected.
+    Windows only."""
+    if sys.platform != "win32":
+        return
+    window = find_window_of_ancestor(find_session_pid(key), get_parent_pids(), get_process_windows())
+    if not window:
+        return
+    user32 = ctypes.WinDLL("user32")
+    if user32.IsIconic(ctypes.c_void_p(window)):
+        user32.ShowWindow(ctypes.c_void_p(window), 9)  # SW_RESTORE
+    # Windows lets a background process take the focus only right after a key press; without one, the taskbar button flashes.
+    user32.keybd_event(0x12, 0, 0, 0)  # Alt down
+    user32.keybd_event(0x12, 0, 2, 0)  # Alt up
+    user32.SetForegroundWindow(ctypes.c_void_p(window))
+
+
+def find_session_pid(key):
+    """The pid of the Claude Code process of a session, or None when its session file is gone."""
+    for path in SESSIONS_DIR.glob("*.json"):
+        try:
+            session = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if session.get("sessionId") == key:
+            return session.get("pid")
+    return None
+
+
+def find_window_of_ancestor(pid, parents, windows):
+    """The window of the process or its nearest ancestor that has one: the terminal or IDE a session runs in. None when none has one."""
+    # ponytail: an exited parent leaves a pid Windows may reuse; compare process start times if a wrong window ever comes up.
+    for _ in range(20):
+        if pid in windows:
+            return windows[pid]
+        pid = parents.get(pid)
+    return None
+
+
+def get_parent_pids():
+    """Every running process's parent pid, by pid."""
+    from ctypes import wintypes
+    class ProcessEntry(ctypes.Structure):
+        _fields_ = [("dwSize", wintypes.DWORD), ("cntUsage", wintypes.DWORD), ("th32ProcessID", wintypes.DWORD),
+                    ("th32DefaultHeapID", ctypes.c_size_t), ("th32ModuleID", wintypes.DWORD), ("cntThreads", wintypes.DWORD),
+                    ("th32ParentProcessID", wintypes.DWORD), ("pcPriClassBase", ctypes.c_long), ("dwFlags", wintypes.DWORD),
+                    ("szExeFile", wintypes.WCHAR * 260)]
+    kernel32 = ctypes.WinDLL("kernel32")
+    kernel32.CreateToolhelp32Snapshot.restype = ctypes.c_void_p
+    snapshot = ctypes.c_void_p(kernel32.CreateToolhelp32Snapshot(2, 0))  # TH32CS_SNAPPROCESS
+    entry = ProcessEntry(dwSize=ctypes.sizeof(ProcessEntry))
+    parents = {}
+    found = kernel32.Process32FirstW(snapshot, ctypes.byref(entry))
+    while found:
+        parents[entry.th32ProcessID] = entry.th32ParentProcessID
+        found = kernel32.Process32NextW(snapshot, ctypes.byref(entry))
+    kernel32.CloseHandle(snapshot)
+    return parents
+
+
+def get_process_windows():
+    """The topmost visible, titled main window of each process that has one, by pid."""
+    from ctypes import wintypes
+    user32 = ctypes.WinDLL("user32")
+    windows = {}
+
+    @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    def add_window(window, _):
+        if user32.IsWindowVisible(window) and not user32.GetWindow(window, 4) and user32.GetWindowTextLengthW(window):  # 4: GW_OWNER
+            pid = wintypes.DWORD()
+            user32.GetWindowThreadProcessId(window, ctypes.byref(pid))
+            windows.setdefault(pid.value, window)
+        return True
+
+    user32.EnumWindows(add_window, 0)
+    return windows
+
+
 def read_theme():
     """Claude Code's selected theme as colors by theme key, with a custom theme's overrides on its base."""
     settings = read_json(CLAUDE_DIR / "settings.json")
@@ -685,7 +765,7 @@ PAGE = """<!DOCTYPE html>
         body:has(> #sessions.min) > .top { order: 1; }
         body:has(> #sessions.min) > #note { order: 2; }
         #pin, #size { background: transparent; color: var(--light); border: 1px solid var(--dim); border-radius: 6px; padding: 4px 12px; cursor: pointer; }
-        .card { border: 1px solid var(--dim); padding: 1rem 15px 1rem 1rem; border-radius: 6px; margin-bottom: 0.75rem; border-left: 4px solid var(--dim); box-sizing: border-box; }
+        .card { border: 1px solid var(--dim); padding: 1rem 15px 1rem 1rem; border-radius: 6px; margin-bottom: 0.75rem; border-left: 4px solid var(--dim); box-sizing: border-box; cursor: pointer; }
         .working { border-left-color: var(--working); }
         .waiting { border-left-color: var(--waiting); }
         .idle { border-left-color: var(--idle); }
@@ -777,6 +857,11 @@ PAGE = """<!DOCTYPE html>
                 hideCutRows();
             });
         };
+        // A click on a card brings the window its session runs in to the front.
+        sessions.onclick = e => {
+            const card = e.target.closest(".card[data-key]");
+            if (card) fetch("/focus", { method: "POST", body: JSON.stringify({ key: card.dataset.key }) }).catch(() => { });
+        };
         // A card never shrinks mid-turn: each keeps the tallest height it has had since its session was last idle with no agents.
         const maxHeights = {};
         function lockCardHeights() {
@@ -862,17 +947,20 @@ class MonitorHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         # Any site's page can post to 127.0.0.1; only the monitor's own page sends its Origin.
         port = self.server.server_address[1]
-        if self.path != "/config" or self.headers.get("Origin") not in (f"http://{HOST}:{port}", f"http://localhost:{port}"):
+        if self.path not in ("/config", "/focus") or self.headers.get("Origin") not in (f"http://{HOST}:{port}", f"http://localhost:{port}"):
             self.send_error(403)
             return
         try:
-            window = json.loads(self.rfile.read(min(int(self.headers.get("Content-Length") or 0), 10000)))
+            body = json.loads(self.rfile.read(min(int(self.headers.get("Content-Length") or 0), 10000)))
         except ValueError:
-            window = None
-        if not isinstance(window, dict):
+            body = None
+        if not isinstance(body, dict):
             self.send_error(400)
             return
-        save_window_mode(window)
+        if self.path == "/focus":
+            focus_session_window(body.get("key"))
+        else:
+            save_window_mode(body)
         self.send_response(204)
         self.end_headers()
 

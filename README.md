@@ -38,6 +38,7 @@ window.
   at a time; a second start waits up to 25 s for one whose window just closed, then quits.
 - Opens as a tab in your default browser. In Chrome or Edge its "Pin on top" button moves the cards into a picture-in-picture window
   that stays above other windows; closing that window puts them back in the tab.
+- On Windows, a click on a card brings the window its session runs in to the front: the terminal or IDE, not the tab in it.
 - The "Min" button shows each session as one line, `Busy/Blocked/Idle - name - progress`, with the cache minutes at its right end;
   "Max" brings the full cards back. The config file keeps the choice.
 - The page takes Claude Code's theme (`/theme`, including a custom theme in `~/.claude/themes`) and follows a change within a
