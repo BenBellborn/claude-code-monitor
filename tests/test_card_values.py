@@ -43,6 +43,12 @@ def test_silent_tool_keeps_previous_activity():
     assert scan(read, handback)["activity"] == "Grep: x"
 
 
+def test_new_prompt_clears_the_last_turns_activity():
+    read = {"type": "assistant", "message": {"id": "m1", "model": "m", "content": [{"type": "tool_use", "name": "Grep", "input": {"pattern": "x"}}]}}
+    prompt = {"type": "user", "origin": {"kind": "human"}, "timestamp": "2026-01-01T00:00:00Z", "message": {"content": "next"}}
+    assert scan(read, prompt)["activity"] is None, "last turn's tool call shown in the new turn"
+
+
 def test_progress_note_shows_while_busy_or_waiting_and_is_deleted_when_idle():
     ccm.PROGRESS_DIR = ccm.PROJECTS_DIR = Path(tempfile.mkdtemp())
     note_file = ccm.PROGRESS_DIR / "ccm-progress-s1.txt"

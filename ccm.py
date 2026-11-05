@@ -158,7 +158,7 @@ def scan_transcript(transcript):
         except ValueError:
             continue
         if is_prompt(e):
-            totals.update(turn_start=e.get("timestamp"), turn_calls=0, turn_prompt=read_prompt_text(e), turn_skill=None)
+            totals.update(turn_start=e.get("timestamp"), turn_calls=0, turn_prompt=read_prompt_text(e), turn_skill=None, activity=None)
         if e.get("type") in ("user", "assistant"):
             totals["ended"] = (e.get("message") or {}).get("stop_reason") == "end_turn"
         message = e.get("message") if e.get("type") == "assistant" else None
