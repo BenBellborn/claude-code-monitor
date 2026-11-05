@@ -641,12 +641,49 @@ def save_window_mode(window):
         saved["window"] = {}
     if isinstance(window.get("min"), bool):
         saved["window"]["min"] = window["min"]
-    for key in ("width", "height"):
-        if isinstance(window.get(key), int) and 100 <= window[key] <= 10000:
+    # x and y are screen pixels and go negative on a monitor left of or above the main one.
+    # A Min window with one card is under 100 pixels tall.
+    limits = {"width": (1, 10000), "height": (1, 10000), "x": (-100000, 100000), "y": (-100000, 100000)}
+    for key, (low, high) in limits.items():
+        if isinstance(window.get(key), int) and low <= window[key] <= high:
             saved["window"][key] = window[key]
     save_config(saved)
 
 
+def place_pinned_window(title, width, height):
+    """Moves the pinned window to its saved position and gives it the outer size the page asks for. Windows only; nothing happens
+    before a first save."""
+    window_mode = read_config()["window"]
+    if sys.platform != "win32" or not isinstance(title, str) or "x" not in window_mode or "y" not in window_mode:
+        return
+    sized = all(isinstance(n, int) and 0 < n < 10000 for n in (width, height))
+    from ctypes import wintypes
+    user32 = ctypes.WinDLL("user32")
+    user32.GetWindowLongPtrW.restype = ctypes.c_ssize_t
+    # Screen pixels, as the page saves them, not pixels scaled to this process's DPI.
+    user32.SetThreadDpiAwarenessContext(ctypes.c_void_p(-4))  # DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2
+    pinned = []
+
+    # The pinned window is the one kept on top with the page's title; the tab's window adds the browser name to it.
+    @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    def add_pinned(window, _):
+        text = ctypes.create_unicode_buffer(300)
+        user32.GetWindowTextW(window, text, 300)
+        if text.value == title and user32.IsWindowVisible(window) and user32.GetWindowLongPtrW(window, -20) & 8:  # GWL_EXSTYLE, WS_EX_TOPMOST
+            pinned.append(window)
+        return True
+
+    user32.EnumWindows(add_pinned, 0)
+    x, y = window_mode["x"], window_mode["y"]
+    for window in pinned[:1]:
+        # The size goes first, so the window is never moved to a spot where the browser's own size would reach under the taskbar.
+        if sized:
+            user32.SetWindowPos(ctypes.c_void_p(window), None, 0, 0, width, height, 0x16)  # NOMOVE, NOZORDER, NOACTIVATE
+        user32.SetWindowPos(ctypes.c_void_p(window), None, x, y, 0, 0, 0x15)  # NOSIZE, NOZORDER, NOACTIVATE
+        # Debug: what the pinned window was set to; remove once the position is right.
+        with (CACHE / "ccm-window.log").open("a", encoding="utf-8") as log:
+            size = f"{width:4},{height:4}" if sized else "    ,    "
+            log.write(f"{datetime.now():%H:%M:%S} placed {' ' * 26} outer:[{x:4},{y:4},{size}]\n")
 
 
 def focus_session_window(key):
@@ -808,7 +845,7 @@ PAGE = """<!DOCTYPE html>
         pin.hidden = !("documentPictureInPicture" in window);
         // Min shows each card as one line, in the tab and the pinned window; it and the pinned window's size are kept in the config file.
         const size = document.getElementById("size"), windowMode = __WINDOW__;
-        function saveWindowMode() { fetch("/config", { method: "POST", body: JSON.stringify(windowMode) }).catch(() => { }); }
+        function saveWindowMode() { fetch("/config", { method: "POST", body: JSON.stringify(windowMode), keepalive: true }).catch(() => { }); }
         function setMinimized(min) {
             sessions.classList.toggle("min", min);
             size.textContent = min ? "Max" : "Min";
@@ -834,6 +871,31 @@ PAGE = """<!DOCTYPE html>
         let pipColors = null;
         pin.onclick = async () => {
             const pip = await documentPictureInPicture.requestWindow({ width: windowMode.width, height: windowMode.height });
+            // Debug: logs each load and save of the window's bounds, with what the window reports, to this tab's console and to
+            // ~/.claude/cache/ccm-window.log; remove once the position is right.
+            // Each line: event want:[x,y,w,h loaded or saved] outer:[x,y,w,h] inner:[x,y,w,h]. The browser gives no inner position; it is the
+            // outer one plus the side border, with the top bar above it.
+            const debugBounds = (event, values) => {
+                const numbers = list => list.map(n => String(n ?? "").padStart(4)).join(",");
+                const outerWidth = pip.outerWidth, outerHeight = pip.outerHeight, border = (outerWidth - pip.innerWidth) / 2;
+                const outer = [pip.screenX, pip.screenY, outerWidth, outerHeight];
+                const inner = [pip.screenX + border, pip.screenY + outerHeight - pip.innerHeight - border, pip.innerWidth, pip.innerHeight];
+                const line = `${event.padEnd(6)} want:[${numbers([values.x, values.y, values.width, values.height])}] outer:[${numbers(outer)}] inner:[${numbers(inner)}]`;
+                console.log(new Date().toLocaleTimeString(), line);
+                fetch("/debug", { method: "POST", body: JSON.stringify({ line }), keepalive: true }).catch(() => { });
+            };
+            debugBounds("open", windowMode);
+            // The browser opens the window at its own position and size and sets them again shortly after, so the script sets the saved
+            // ones for the first seconds. The script asks for the outer size; the browser's top bar is the difference. Right after the
+            // window opens it reports the outer size of another window, so the first call sets only the position.
+            const placeWindow = sized => {
+                const ratio = pip.devicePixelRatio;
+                const width = sized ? Math.round((windowMode.width + pip.outerWidth - pip.innerWidth) * ratio) : undefined;
+                const height = sized ? Math.round((windowMode.height + pip.outerHeight - pip.innerHeight) * ratio) : undefined;
+                debugBounds("load", windowMode);
+                fetch("/place", { method: "POST", body: JSON.stringify({ title: document.title, width, height }) }).catch(() => { });
+            };
+            placeWindow(false);
             for (const style of document.querySelectorAll("style")) pip.document.head.append(style.cloneNode(true));
             pipColors = pip.document.getElementById("colors");
             const unpin = Object.assign(pin.cloneNode(), { textContent: "Unpin", hidden: false, onclick: () => pip.close() });
@@ -847,9 +909,33 @@ PAGE = """<!DOCTYPE html>
             pin.hidden = true;
             hideCutRows();
             pip.addEventListener("resize", hideCutRows);
-            pip.addEventListener("pagehide", () => {
-                Object.assign(windowMode, { width: pip.innerWidth, height: pip.innerHeight });
+            const readBounds = () => {
+                const ratio = pip.devicePixelRatio;
+                return { width: pip.innerWidth, height: pip.innerHeight, x: Math.round(pip.screenX * ratio), y: Math.round(pip.screenY * ratio) };
+            };
+            const saveBounds = () => {
+                const bounds = readBounds();
+                if (Object.entries(bounds).every(([key, value]) => windowMode[key] === value)) return;
+                debugBounds("save", bounds);
+                Object.assign(windowMode, bounds);
                 saveWindowMode();
+            };
+            // The window has no move event, so the script reads its bounds each second and saves them once they have not changed for 2 s.
+            // A reload of the tab closes the window without a pagehide save, so a save cannot wait for the close.
+            let placings = 2, seen = "", saveTimer;
+            const checkBounds = () => {
+                const bounds = JSON.stringify(readBounds());
+                if (bounds === seen) return;
+                seen = bounds;
+                clearTimeout(saveTimer);
+                saveTimer = setTimeout(saveBounds, 2000);
+            };
+            const boundsTimer = setInterval(() => placings-- > 0 ? placeWindow(true) : checkBounds(), 1000);
+            pip.addEventListener("pagehide", () => {
+                clearInterval(boundsTimer);
+                clearTimeout(saveTimer);
+                debugBounds("close", windowMode);
+                if (placings < 0) saveBounds();
                 pin.before(size);
                 document.querySelector(".top").after(sessions, note);
                 pin.hidden = false;
@@ -947,7 +1033,7 @@ class MonitorHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         # Any site's page can post to 127.0.0.1; only the monitor's own page sends its Origin.
         port = self.server.server_address[1]
-        if self.path not in ("/config", "/focus") or self.headers.get("Origin") not in (f"http://{HOST}:{port}", f"http://localhost:{port}"):
+        if self.path not in ("/config", "/focus", "/place", "/debug") or self.headers.get("Origin") not in (f"http://{HOST}:{port}", f"http://localhost:{port}"):
             self.send_error(403)
             return
         try:
@@ -957,8 +1043,16 @@ class MonitorHandler(BaseHTTPRequestHandler):
         if not isinstance(body, dict):
             self.send_error(400)
             return
-        if self.path == "/focus":
+        # Debug: what the page loads and saves for the pinned window; remove once the position is right.
+        if self.path in ("/debug", "/config"):
+            with (CACHE / "ccm-window.log").open("a", encoding="utf-8") as log:
+                log.write(f"{datetime.now():%H:%M:%S} {body['line'] if self.path == '/debug' else f'config {body}'}\n")
+        if self.path == "/debug":
+            pass
+        elif self.path == "/focus":
             focus_session_window(body.get("key"))
+        elif self.path == "/place":
+            place_pinned_window(body.get("title"), body.get("width"), body.get("height"))
         else:
             save_window_mode(body)
         self.send_response(204)

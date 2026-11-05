@@ -44,7 +44,7 @@ window.
 - The page takes Claude Code's theme (`/theme`, including a custom theme in `~/.claude/themes`) and follows a change within a
   second. Dark themes get a black page, light ones white; an `-ansi` theme uses its plain twin's colors.
 - `~/.claude/ccm/config.json` holds your own colors over the theme's (`colors`) and the last mode (`window`: `min`, and the pinned
-  window's `width` and `height`), and the prompt cache's lifetime
+  window's `width`, `height` and, on Windows, its screen position `x` and `y`, where it opens again), and the prompt cache's lifetime
   (`cache`: `ttlMinutes`, default 60, Claude Code's 1-hour cache). It is created on the first
   page load; a plugin update leaves it alone. The color keys are `background`, `text`, `bright`, `light`, `muted`, `dim`, `working`, `waiting`, `idle`, `stopped`, `highlight`, and
   `red`, `yellow` and `orange` for the statusline's colors, e.g. `"colors": {"working": "#22c55e"}`.

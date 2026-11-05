@@ -58,6 +58,11 @@ def test_page_and_events_show_cards_pills_and_agent_rows():
         assert "<title>\U0001f7e2 1</title>" in page, page
         assert "<h1>Claude Code Monitor</h1>" in page and f'"{ccm.VERSION}"' in page, "version label shown or reload check gone"
         assert 'pin.hidden = !("documentPictureInPicture" in window);' in page, "pin button not offered on every OS"
+        assert 'JSON.stringify(windowMode), keepalive: true }' in page, "a reload can drop the window position saved on close"
+        assert "placings-- > 0 ? placeWindow(true) : checkBounds(), 1000)" in page, \
+            "the browser's own bounds saved before the saved ones are set, or a move lost when a reload closes the window"
+        assert "saveTimer = setTimeout(saveBounds, 2000);" in page, "bounds saved before the window has stopped moving for 2 s"
+        assert "placeWindow(false);" in page, "the first placing sizes the window from the outer size of another window"
         assert '<b class="name">proj</b> - <span class="yellow">claude-opus-5-5</span>:<span class="yellow">high</span>' in page, page
         assert '<div class="state">Busy <span class="highlight">/fix all</span></div>' in page, page
         assert '<div class="progress">Grep: x · ' in page, page
@@ -68,12 +73,14 @@ def test_page_and_events_show_cards_pills_and_agent_rows():
         assert '<p class="usage"><span class="pill">5h:1%</span></p>' in page, page
         assert "--working: rgb(78,186,101);" in page and json.loads(ccm.CONFIG_PATH.read_text()) == ccm.DEFAULT_CONFIG, "config file not created"
         assert post_config(port, {"min": True, "width": 500}, f"http://attacker.example:{port}") == 403, "post from another site"
-        assert post_config(port, {"min": True, "width": 500, "height": "x"}, f"http://127.0.0.1:{port}") == 204
+        assert post_config(port, {"min": True, "width": 86, "height": "x", "x": -1200, "y": 200000}, f"http://127.0.0.1:{port}") == 204
         config = json.loads(ccm.CONFIG_PATH.read_text())
+        assert config["window"].get("x") == -1200 and "y" not in config["window"], "screen position not kept or out of range kept"
+        config["window"].pop("x")
         config["colors"]["working"] = "#123456"
         ccm.CONFIG_PATH.write_text(json.dumps(config))
         page = get(port, "/")
-        assert 'windowMode = {"min": true, "width": 500, "height": 400}' in page, "window mode not saved or not served"
+        assert 'windowMode = {"min": true, "width": 86, "height": 400}' in page, "window mode not served, or a small Min window's size dropped"
         assert "--working: #123456;" in page, "edited color not served"
         ccm.CONFIG_PATH.write_text("{ broken")
         post_config(port, {"min": False}, f"http://127.0.0.1:{port}")
