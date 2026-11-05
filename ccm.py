@@ -896,7 +896,7 @@ PAGE = """<!DOCTYPE html>
                 fetch("/place", { method: "POST", body: JSON.stringify({ title: document.title, width, height }) }).catch(() => { });
             };
             placeWindow(false);
-            for (const style of document.querySelectorAll("style")) pip.document.head.append(style.cloneNode(true));
+            for (const style of document.querySelectorAll("style, link[rel=icon]")) pip.document.head.append(style.cloneNode(true));
             pipColors = pip.document.getElementById("colors");
             const unpin = Object.assign(pin.cloneNode(), { textContent: "Unpin", hidden: false, onclick: () => pip.close() });
             // The browser shows only the address in the title bar, so the window names itself in a row above the cards.
