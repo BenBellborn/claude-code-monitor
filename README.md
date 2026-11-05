@@ -25,7 +25,8 @@ window.
 ## What it shows
 - **Title bar:** `🟢 2 ⛔ 1`, sessions running and sessions waiting on you (blocked or idle).
 - **Each card:**
-  - session name, model and effort;
+  - session name, model and effort, and at the right end the minutes until the session's prompt cache goes cold, e.g. `42m`.
+    Each API reply, and `/clear`, starts the count again at `ttlMinutes`; at `0m` the card dims;
   - `Busy` with the current or last skill or prompt, highlighted;
   - a second line: what the session is doing right now and for how long, or a red `Blocked` (awaiting user input) or red `Idle`;
   - one row per subagent that is working;
@@ -37,13 +38,14 @@ window.
   at a time; a second start waits up to 25 s for one whose window just closed, then quits.
 - Opens as a tab in your default browser. In Chrome or Edge its "Pin on top" button moves the cards into a picture-in-picture window
   that stays above other windows; closing that window puts them back in the tab.
-- The "Min" button shows each session as one line, `Busy/Blocked/Idle - name - progress`; "Max" brings the full cards back. The
-  config file keeps the choice.
+- The "Min" button shows each session as one line, `Busy/Blocked/Idle - name - progress`, with the cache minutes at its right end;
+  "Max" brings the full cards back. The config file keeps the choice.
 - The page takes Claude Code's theme (`/theme`, including a custom theme in `~/.claude/themes`) and follows a change within a
   second. Dark themes get a black page, light ones white; an `-ansi` theme uses its plain twin's colors.
 - `~/.claude/ccm/config.json` holds your own colors over the theme's (`colors`) and the last mode (`window`: `min`, and the pinned
-  window's `width` and `height`). It is created on the first page load; a plugin update leaves it alone. The color keys are
-  `background`, `text`, `bright`, `light`, `muted`, `dim`, `working`, `waiting`, `idle`, `stopped`, `highlight`, and
+  window's `width` and `height`), and the prompt cache's lifetime
+  (`cache`: `ttlMinutes`, default 60, Claude Code's 1-hour cache). It is created on the first
+  page load; a plugin update leaves it alone. The color keys are `background`, `text`, `bright`, `light`, `muted`, `dim`, `working`, `waiting`, `idle`, `stopped`, `highlight`, and
   `red`, `yellow` and `orange` for the statusline's colors, e.g. `"colors": {"working": "#22c55e"}`.
 - Closing the window stops it (after 20 s). The next session start opens it again.
 - Listens on `127.0.0.1` only, on the first free port from 8080 to 8179.

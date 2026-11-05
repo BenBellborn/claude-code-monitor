@@ -1,6 +1,7 @@
 import ctypes
 import html
 import json
+import math
 import os
 import re
 import shutil
@@ -26,8 +27,6 @@ DETACHED = {
     **({"creationflags": subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP} if sys.platform == "win32"
        else {"start_new_session": True}),
 }
-# An idle card fades once its session has been idle this long.
-IDLE_FADE_SECONDS = 10 * 60
 # A subagent stopped or killed mid-call is never marked finished; one silent this long is gone. A tool call times out at 10 minutes.
 SUBAGENT_GONE_SECONDS = 15 * 60
 SCRIPT = Path(__file__).resolve()
@@ -35,10 +34,11 @@ CACHE = Path.home() / ".claude" / "cache"
 # A session writes ccm-progress-<sessionId>.txt here; its text shows under the card while the session is busy or waiting, and
 # the file is deleted once the session is idle.
 PROGRESS_DIR = CACHE / "progress"
-# The user's own page colors over the theme's, and the window's last mode; created with the defaults when missing. Kept out of
-# the plugin folder, which a plugin update replaces.
+# The user's own page colors over the theme's, the window's last mode, and the prompt cache's lifetime (each API request
+# restarts it; Claude Code asks for the 1-hour cache); created with the defaults when missing. Kept out of the plugin folder,
+# which a plugin update replaces.
 CONFIG_PATH = Path.home() / ".claude" / "ccm" / "config.json"
-DEFAULT_CONFIG = {"colors": {}, "window": {"min": False, "width": 600, "height": 400}}
+DEFAULT_CONFIG = {"colors": {}, "window": {"min": False, "width": 600, "height": 400}, "cache": {"ttlMinutes": 60}}
 # Claude Code's built-in theme colors, copied from its build: they are compiled in, not kept in a file. The theme has no page
 # background (the terminal sets it), so dark themes get black and light ones white. An -ansi theme uses its plain twin.
 CC_THEMES = {
@@ -122,8 +122,12 @@ def build_turn_progress(totals):
 
 def get_turn_start_time(totals):
     """When the session's current turn started, in epoch seconds; 0 before its first prompt."""
-    start = totals.get("turn_start")
-    return datetime.fromisoformat(start.replace("Z", "+00:00")).timestamp() if start else 0
+    return parse_timestamp(totals.get("turn_start"))
+
+
+def parse_timestamp(stamp):
+    """A transcript timestamp in epoch seconds; 0 for none."""
+    return datetime.fromisoformat(stamp.replace("Z", "+00:00")).timestamp() if stamp else 0
 
 
 def format_tokens(n):
@@ -140,7 +144,7 @@ def scan_transcript(transcript):
     totals = transcript_totals.setdefault(
         transcript,
         {"offset": 0, "seen": set(), "in": 0, "out": 0, "turn_start": None, "turn_calls": 0, "turn_prompt": "", "turn_skill": None,
-         "model": "?", "effort": "?", "context": 0, "activity": None, "ended": False},
+         "model": "?", "effort": "?", "context": 0, "activity": None, "ended": False, "last_reply": None, "started": None},
     )
     # A subagent's transcript may not exist yet.
     try:
@@ -157,6 +161,7 @@ def scan_transcript(transcript):
             e = json.loads(line)
         except ValueError:
             continue
+        totals["started"] = totals["started"] or e.get("timestamp")
         if is_prompt(e):
             totals.update(turn_start=e.get("timestamp"), turn_calls=0, turn_prompt=read_prompt_text(e), turn_skill=None, activity=None)
         if e.get("type") in ("user", "assistant"):
@@ -165,7 +170,7 @@ def scan_transcript(transcript):
         # API errors and limit notices are written as synthetic replies with no model, effort or usage of their own.
         if not message or e.get("isApiErrorMessage") or message.get("model") == "<synthetic>":
             continue
-        totals.update(model=message.get("model", "?"), effort=e.get("effort", "?"))
+        totals.update(model=message.get("model", "?"), effort=e.get("effort", "?"), last_reply=e.get("timestamp"))
         if e.get("attributionSkill"):
             totals["turn_skill"] = e["attributionSkill"]
         for block in message.get("content", []):
@@ -310,6 +315,8 @@ def find_session(s, today):
         "progress": " · ".join(progress),
         "footer": footer,
         "agents": get_active_subagents(transcript) if transcript else [],
+        # /clear starts a new transcript with no reply yet; its timer counts from the transcript's first entry.
+        "cache_start": parse_timestamp(totals.get("last_reply") or totals.get("started")),
         "note": note,
     }
 
@@ -558,7 +565,12 @@ def update_sessions():
 def build_title_and_cards(sessions):
     """The tab title and the session cards' HTML."""
     cards = []
+    ttl_minutes = read_config()["cache"]["ttlMinutes"]
+    if not isinstance(ttl_minutes, (int, float)):
+        ttl_minutes = DEFAULT_CONFIG["cache"]["ttlMinutes"]
     for s in sessions:
+        cache_minutes = math.ceil(max(0, s["cache_start"] + ttl_minutes * 60 - time.time()) / 60)
+        ttl = f'<span class="ttl">{cache_minutes}m</span>'
         agents = "".join(
             f'<div class="agent">● {build_model_effort(a["model"], a["effort"])} - '
             f'{html.escape(a["type"]) + " - " if a["type"] else ""}{html.escape(a["activity"])}</div>'
@@ -567,12 +579,12 @@ def build_title_and_cards(sessions):
         detail = html.escape(s["detail"])
         if s["highlight"]:
             detail = f'<span class="highlight">{detail}</span>'
-        faded = " faded" if s["color"] == "idle" and time.time() - s["updated"] / 1000 > IDLE_FADE_SECONDS else ""
+        faded = " faded" if s["color"] != "working" and cache_minutes == 0 else ""
         mini = " - ".join(filter(None, [STATUS_WORDS[s["color"]], f'<b class="name">{html.escape(s["label"])}</b>', html.escape(s["note"] or s["progress"])]))
         cards.append(
             f'<div class="card {s["color"]}{faded}" data-key="{html.escape(s["key"])}">'
-            f'<div class="mini">{mini}</div>'
-            f'<div class="head"><b class="name">{html.escape(s["label"])}</b> - {build_model_effort(s["model"], s["effort"])}</div>'
+            f'<div class="mini"><span class="line">{mini}</span>{ttl}</div>'
+            f'<div class="head"><span class="line"><b class="name">{html.escape(s["label"])}</b> - {build_model_effort(s["model"], s["effort"])}</span>{ttl}</div>'
             f'<div class="state">Busy {detail}</div>'
             f'<div class="progress">{STOPPED_LINES.get(s["color"]) or html.escape(s["progress"]) or "&nbsp;"}</div>{agents}'
             f'<div class="footer">{" | ".join(statuslines.get(s["key"], []) + [html.escape(f) for f in s["footer"]]) or "&nbsp;"}</div>'
@@ -695,7 +707,11 @@ PAGE = """<!DOCTYPE html>
         .mini { display: none; }
         #sessions.min .card { padding: 2px 8px; margin: 0; border-radius: 0; border-width: 0 0 1px 4px; min-height: 0 !important; }
         #sessions.min .card > :not(.mini) { display: none; }
-        #sessions.min .mini { display: block; white-space: nowrap; overflow: hidden; font-size: 0.9rem; }
+        #sessions.min .mini { display: flex; font-size: 0.9rem; }
+        /* The minutes until the prompt cache goes cold stay at the line's right end; the edge clips the text before them. */
+        .head { display: flex; }
+        .line { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; }
+        .ttl { flex-shrink: 0; padding-left: 0.5rem; color: var(--muted); }
         #sessions.min .idle .mini { color: var(--muted); }
         .highlight { color: var(--background); background: var(--highlight); padding: 0 4px; border-radius: 3px; font-weight: 600; }
     </style>

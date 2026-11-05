@@ -49,6 +49,30 @@ def test_new_prompt_clears_the_last_turns_activity():
     assert scan(read, prompt)["activity"] is None, "last turn's tool call shown in the new turn"
 
 
+def test_cache_countdown_starts_at_each_reply_and_dims_the_card_when_cold():
+    ccm.CONFIG_PATH = Path(tempfile.mkdtemp()) / "config.json"
+
+    def card(minutes_ago, synthetic=False, status="idle"):
+        ccm.PROGRESS_DIR = ccm.PROJECTS_DIR = Path(tempfile.mkdtemp())
+        transcript = ccm.PROJECTS_DIR / "p" / "s1.jsonl"
+        transcript.parent.mkdir()
+        stamp = lambda minutes: datetime.fromtimestamp(time.time() - minutes * 60, timezone.utc).isoformat().replace("+00:00", "Z")
+        replies = [{**REAL, "timestamp": stamp(90)}, {**(SYNTHETIC if synthetic else REAL), "timestamp": stamp(minutes_ago)}]
+        transcript.write_text("".join(json.dumps(e) + "\n" for e in replies), encoding="utf-8")
+        session = ccm.find_session({"sessionId": "s1", "status": status, "updatedAt": time.time() * 1000}, date.today())
+        return ccm.build_title_and_cards([{**session, "label": "proj"}])[1]
+
+    fresh = card(0.5)
+    assert fresh.count('<span class="ttl">60m</span>') == 2 and "faded" not in fresh, "fresh cache not 60m on both lines, or dimmed"
+    assert '<span class="ttl">42m</span>' in card(18.5), "minutes left not counted from the last reply"
+    assert '<span class="ttl">0m</span>' in card(61) and "faded" in card(61), "cold cache not 0m or not dimmed"
+    assert "faded" in card(61, synthetic=True), "an API error reply counted as a cache refresh"
+    assert "faded" not in card(61, status="busy"), "a busy card with a cold cache dimmed"
+    assert "faded" in card(61, status="waiting"), "a blocked card with a cold cache not dimmed"
+    ccm.CONFIG_PATH.write_text(json.dumps({"cache": {"ttlMinutes": 5}}))
+    assert '<span class="ttl">5m</span>' in card(0.5), "ttlMinutes setting not used"
+
+
 def test_note_of_an_ended_session_is_deleted():
     ccm.PROGRESS_DIR = Path(tempfile.mkdtemp())
     ccm.SESSIONS_DIR, ccm.PROJECTS_DIR = Path(tempfile.mkdtemp()), Path(tempfile.mkdtemp())
@@ -115,6 +139,22 @@ def test_page_colors_follow_the_claude_code_theme_then_the_config_file():
     assert "--background: rgb(255,255,255);" in colors and "--stopped: rgb(171,43,63);" in colors, "base or ansi fallback wrong"
     ccm.CONFIG_PATH.write_text(json.dumps({"colors": {"working": "#123456</style>"}}))
     assert "--working: #123456/style;" in ccm.build_color_variables(), "config color does not win or is not cleaned"
+
+
+def test_cache_timer_counts_from_the_last_reply_or_else_the_transcript_start():
+    ccm.PROGRESS_DIR = ccm.PROJECTS_DIR = Path(tempfile.mkdtemp())
+    transcript = ccm.PROJECTS_DIR / "p" / "s1.jsonl"
+    transcript.parent.mkdir()
+    stamp = lambda seconds: datetime.fromtimestamp(seconds, timezone.utc).isoformat().replace("+00:00", "Z")
+    cleared = int(time.time()) - 60
+
+    def cache_start(*entries):
+        with transcript.open("a", encoding="utf-8") as f:
+            f.write("".join(json.dumps(e) + chr(10) for e in entries))
+        return ccm.find_session({"sessionId": "s1", "status": "idle", "updatedAt": time.time() * 1000}, date.today())["cache_start"]
+
+    assert cache_start({"type": "custom-title"}, {"type": "system", "timestamp": stamp(cleared)}) == cleared, "a new transcript counts from 0"
+    assert cache_start({**REAL, "timestamp": stamp(cleared + 30)}) == cleared + 30, "a reply does not restart the timer"
 
 
 def test_missing_transcript_gives_defaults():
