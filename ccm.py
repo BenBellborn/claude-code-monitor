@@ -867,8 +867,8 @@ PAGE = """<!DOCTYPE html>
         window.addEventListener("resize", hideCutRows);
         size.onclick = () => { windowMode.min = !windowMode.min; setMinimized(windowMode.min); saveWindowMode(); };
         setMinimized(windowMode.min);
-        // The theme colors change live, in the tab and the pinned window.
-        let pipColors = null;
+        // The theme colors and the title change live, in the tab and the pinned window; the title shows in the taskbar.
+        let pipColors = null, pipDocument = null;
         pin.onclick = async () => {
             const pip = await documentPictureInPicture.requestWindow({ width: windowMode.width, height: windowMode.height });
             // Debug: logs each load and save of the window's bounds, with what the window reports, to this tab's console and to
@@ -898,6 +898,8 @@ PAGE = """<!DOCTYPE html>
             placeWindow(false);
             for (const style of document.querySelectorAll("style, link[rel=icon]")) pip.document.head.append(style.cloneNode(true));
             pipColors = pip.document.getElementById("colors");
+            pipDocument = pip.document;
+            pipDocument.title = document.title;
             const unpin = Object.assign(pin.cloneNode(), { textContent: "Unpin", hidden: false, onclick: () => pip.close() });
             // The browser shows only the address in the title bar, so the window names itself in a row above the cards.
             const header = Object.assign(pip.document.createElement("div"), { className: "top", textContent: "Claude Code Monitor" });
@@ -973,7 +975,7 @@ PAGE = """<!DOCTYPE html>
         events.onmessage = e => {
             const [version, title, cards, colors] = JSON.parse(e.data);
             if (version !== "__VERSION__") { reloadWhenUp(); return; }
-            document.title = title;
+            for (const page of [document, pipDocument]) if (page) page.title = title;
             sessions.innerHTML = cards;
             for (const style of [document.getElementById("colors"), pipColors]) if (style && style.textContent !== colors) style.textContent = colors;
             lockCardHeights();
