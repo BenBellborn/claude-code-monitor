@@ -64,6 +64,7 @@ window.
 | Cards, statusline, title counts | yes | yes |
 | One monitor at a time, closes with its window | yes | yes |
 | "Pin on top" button | Chrome, Edge | Chrome, Edge |
+| A click on a card focuses its session's window | yes | no |
 | Tested | yes | not yet |
 
 ## Python
