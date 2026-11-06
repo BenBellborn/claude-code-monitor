@@ -41,6 +41,9 @@ window.
 - On Windows, a click on a card brings the window its session runs in to the front: the terminal or IDE, not the tab in it.
 - The "Min" button shows each session as one line, `Busy/Blocked/Idle - name - progress`, with the cache minutes at its right end;
   "Max" brings the full cards back. The config file keeps the choice.
+
+  <img src="docs/demo-min.gif" width="480" alt="The pinned window in Min mode: one line per session with its cache minutes, the usage pills, and the title row with the Max and Unpin buttons">
+
 - The page takes Claude Code's theme (`/theme`, including a custom theme in `~/.claude/themes`) and follows a change within a
   second. Dark themes get a black page, light ones white; an `-ansi` theme uses its plain twin's colors.
 - `~/.claude/ccm/config.json` holds your own colors over the theme's (`colors`) and the last mode (`window`: `min`, and the pinned
