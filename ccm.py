@@ -44,22 +44,22 @@ DEFAULT_CONFIG = {"colors": {}, "window": {"min": False, "width": 600, "height":
 CC_THEMES = {
     "dark": {"background": "rgb(0,0,0)", "text": "rgb(255,255,255)", "inactive": "rgb(153,153,153)", "subtle": "rgb(80,80,80)",
              "success": "rgb(78,186,101)", "warning": "rgb(255,193,7)", "error": "rgb(255,107,128)", "claude": "rgb(215,119,87)",
-             "rate_limit_fill": "rgb(177,185,249)"},
+             "rate_limit_fill": "rgb(177,185,249)", "userMessageBackground": "rgb(55,55,55)"},
     "dark-daltonized": {"background": "rgb(0,0,0)", "text": "rgb(255,255,255)", "inactive": "rgb(153,153,153)", "subtle": "rgb(80,80,80)",
                         "success": "rgb(51,153,255)", "warning": "rgb(255,204,0)", "error": "rgb(255,102,102)", "claude": "rgb(255,153,51)",
-                        "rate_limit_fill": "rgb(153,204,255)"},
+                        "rate_limit_fill": "rgb(153,204,255)", "userMessageBackground": "rgb(55,55,55)"},
     "light": {"background": "rgb(255,255,255)", "text": "rgb(0,0,0)", "inactive": "rgb(102,102,102)", "subtle": "rgb(175,175,175)",
               "success": "rgb(44,122,57)", "warning": "rgb(150,108,30)", "error": "rgb(171,43,63)", "claude": "rgb(215,119,87)",
-              "rate_limit_fill": "rgb(87,105,247)"},
+              "rate_limit_fill": "rgb(87,105,247)", "userMessageBackground": "rgb(240,240,240)"},
     "light-daltonized": {"background": "rgb(255,255,255)", "text": "rgb(0,0,0)", "inactive": "rgb(102,102,102)", "subtle": "rgb(175,175,175)",
                          "success": "rgb(0,102,153)", "warning": "rgb(255,153,0)", "error": "rgb(204,0,0)", "claude": "rgb(255,153,51)",
-                         "rate_limit_fill": "rgb(51,102,255)"},
+                         "rate_limit_fill": "rgb(51,102,255)", "userMessageBackground": "rgb(220,220,220)"},
 }
 # Each page color and the theme color it takes. red, yellow and orange are the statusline's ANSI colors, also used for the model
 # and effort.
 THEME_KEYS = {
     "background": "background", "text": "text", "bright": "text", "light": "text", "muted": "inactive",
-    "dim": "subtle", "working": "success", "waiting": "warning", "idle": "subtle", "stopped": "error", "highlight": "warning",
+    "dim": "subtle", "working": "success", "waiting": "warning", "idle": "subtle", "stopped": "error", "highlight": "userMessageBackground",
     "red": "error", "yellow": "warning", "orange": "claude",
 }
 # A color with < or { must not end the page's style block.
@@ -832,7 +832,7 @@ PAGE = """<!DOCTYPE html>
         .line { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; }
         .ttl { flex-shrink: 0; padding-left: 0.5rem; color: var(--muted); }
         #sessions.min .idle .mini { color: var(--muted); }
-        .highlight { color: var(--background); background: var(--highlight); padding: 0 4px; border-radius: 3px; font-weight: 600; }
+        .highlight { color: var(--text); background: var(--highlight); padding: 0 4px; border-radius: 3px; }
     </style>
 </head>
 <body>

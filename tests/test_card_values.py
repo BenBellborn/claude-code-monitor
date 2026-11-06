@@ -130,6 +130,7 @@ def test_page_colors_follow_the_claude_code_theme_then_the_config_file():
     ccm.CLAUDE_DIR = Path(tempfile.mkdtemp())
     ccm.CONFIG_PATH = ccm.CLAUDE_DIR / "ccm" / "config.json"
     assert "--background: rgb(0,0,0); --text: rgb(255,255,255);" in ccm.build_color_variables(), "no theme set is not dark"
+    assert "--highlight: rgb(55,55,55);" in ccm.build_color_variables(), "prompt not on the terminal's prompt background"
     (ccm.CLAUDE_DIR / "themes").mkdir()
     (ccm.CLAUDE_DIR / "themes" / "mine.json").write_text(json.dumps(
         {"base": "light-ansi", "overrides": {"success": "rgb(1,2,3)", "error": "ansi:red", "text": "#abcdef"}}))
@@ -137,6 +138,7 @@ def test_page_colors_follow_the_claude_code_theme_then_the_config_file():
     colors = ccm.build_color_variables()
     assert "--working: rgb(1,2,3);" in colors and "--text: #abcdef;" in colors, "custom theme overrides not applied"
     assert "--background: rgb(255,255,255);" in colors and "--stopped: rgb(171,43,63);" in colors, "base or ansi fallback wrong"
+    assert "--highlight: rgb(240,240,240);" in colors, "light prompt background wrong"
     ccm.CONFIG_PATH.write_text(json.dumps({"colors": {"working": "#123456</style>"}}))
     assert "--working: #123456/style;" in ccm.build_color_variables(), "config color does not win or is not cleaned"
 
