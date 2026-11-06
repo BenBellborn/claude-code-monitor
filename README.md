@@ -100,15 +100,7 @@ every other part goes to the card footer. Model and effort are left out, since t
 is fine: the footer then shows only tool calls and tokens.
 
 ## Progress line
-A session can show its own progress as a white line at the bottom of its card, while it is busy or waiting; the monitor deletes the
-line once the session is idle. The line `Input needed` instead shows an idle session as waiting, until its next prompt; a session that
-ends its reply with questions writes it. A session writes the text to
-`~/.claude/cache/progress/ccm-progress-<sessionId>.txt`; Claude Code sets `CLAUDE_CODE_SESSION_ID` in its shell.
-The card keeps room for the line, so its height stays the same when the line comes and goes.
-```bash
-mkdir -p ~/.claude/cache/progress && printf '%s' "Step 2/4: running tests" > ~/.claude/cache/progress/ccm-progress-$CLAUDE_CODE_SESSION_ID.txt
-```
-To have every session write it, paste this prompt into Claude Code:
+To have every session show its progress at the bottom of its card, paste this prompt into Claude Code:
 ```text
 Add this section to my user-wide ~/.claude/CLAUDE.md, before any section about tools. Create the file if it is missing.
 Change nothing else in it.
