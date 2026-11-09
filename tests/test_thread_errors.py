@@ -14,6 +14,7 @@ def load():
     spec = importlib.util.spec_from_file_location("ccm", CCM_PATH)
     ccm = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(ccm)
+    ccm.log_start_event = lambda event: None
     return ccm
 
 

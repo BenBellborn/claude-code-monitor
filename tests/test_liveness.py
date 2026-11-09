@@ -32,6 +32,7 @@ def load_ccm(clock, jump, max_ticks):
 
     ccm.time = types.SimpleNamespace(time=lambda: clock[0], sleep=sleep)
     ccm.os = types.SimpleNamespace(_exit=exit_)
+    ccm.log_start_event = lambda event: None
     return ccm, ticks
 
 

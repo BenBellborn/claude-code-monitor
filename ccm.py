@@ -9,8 +9,9 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.request
 import webbrowser
-from datetime import date, datetime
+from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
@@ -144,7 +145,8 @@ def scan_transcript(transcript):
     totals = transcript_totals.setdefault(
         transcript,
         {"offset": 0, "seen": set(), "in": 0, "out": 0, "turn_start": None, "turn_calls": 0, "turn_prompt": "", "turn_skill": None,
-         "model": "?", "effort": "?", "context": 0, "activity": None, "ended": False, "last_reply": None, "started": None},
+         "model": "?", "effort": "?", "context": 0, "activity": None, "ended": False, "last_reply": None, "started": None,
+         "title": None},
     )
     # A subagent's transcript may not exist yet.
     try:
@@ -162,6 +164,8 @@ def scan_transcript(transcript):
         except ValueError:
             continue
         totals["started"] = totals["started"] or e.get("timestamp")
+        if e.get("type") == "custom-title" and e.get("customTitle"):
+            totals["title"] = e["customTitle"]
         if is_prompt(e):
             totals.update(turn_start=e.get("timestamp"), turn_calls=0, turn_prompt=read_prompt_text(e), turn_skill=None, activity=None)
         if e.get("type") in ("user", "assistant"):
@@ -621,7 +625,7 @@ def build_title_and_cards(sessions):
             # Always there, so the card keeps its height when a note comes and goes.
             f'<div class="progress-note">{html.escape(s["note"]) or "&nbsp;"}</div></div>'
         )
-    return build_title(sessions), ("".join(cards) or '<p class="empty">No sessions today.</p>') + build_usage_pills()
+    return build_title(sessions), ("".join(cards) or '<p class="empty">No sessions running.</p>') + build_usage_pills()
 
 
 # Cards sort Blocked, Busy, Idle, then most cache time left first, then by folder.
@@ -1130,6 +1134,7 @@ def restart_on_new_version(port):
             print(f"New version not loaded: {e}")
             continue
         print("New version found, restarting.")
+        log_start_event("exit: new version")
         start_with_instance_claim([sys.executable, str(SCRIPT), "--reloaded", str(port), str(instance_lock)])
         os._exit(0)
 
@@ -1154,11 +1159,21 @@ def exit_when_window_closed():
         time.sleep(1)
         missed_heartbeats += 1
         if missed_heartbeats > NO_VIEWER_EXIT_SECONDS:
+            log_start_event("exit: no viewer")
             os._exit(0)
 
 
 def open_monitor_window(port):
     webbrowser.open_new_tab(f"http://{HOST}:{port}/")
+
+
+def open_window_when_unviewed(port):
+    """Opens a window for a session that starts while no page streams events, and gives that window the full time to connect."""
+    global missed_heartbeats
+    if missed_heartbeats < 2:
+        return
+    missed_heartbeats = 0
+    open_monitor_window(port)
 
 
 class MonitorServer(ThreadingHTTPServer):
@@ -1226,6 +1241,26 @@ def try_claim_instance():
         return False
     instance_lock = lock
     return True
+
+
+def show_running_monitor():
+    """True once a running monitor took the request to show this session; a monitor too old for it, or one that is exiting, gives False."""
+    # A port read from the file: a scan of the port range costs about 0.3 s for each port that refuses the connection on Windows.
+    try:
+        port = int((CACHE / "ccm-port.txt").read_text())
+        url = f"http://{HOST}:{port}"
+        if urllib.request.urlopen(f"{url}/ping", timeout=1).read() != b"cc_monitor":
+            return False
+        urllib.request.urlopen(urllib.request.Request(f"{url}/show", data=b"{}", headers={"Origin": url}), timeout=2)
+        return True
+    except (OSError, ValueError):
+        return False
+
+
+def log_start_event(event):
+    """Appends one line per monitor start and exit; the hook drops all output, so a start that shows no window leaves only this."""
+    with (CACHE / "ccm-start.log").open("a", encoding="utf-8") as log:
+        log.write(f"{datetime.now():%Y-%m-%d %H:%M:%S} pid {os.getpid()} {event}\n")
 
 
 if __name__ == "__main__":

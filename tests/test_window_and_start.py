@@ -1,3 +1,4 @@
+import http.client
 import importlib.util
 import os
 import socket
@@ -105,7 +106,51 @@ def test_posix_claim_is_a_lock_only_one_process_holds():
         os.close(held[0])
 
 
-def load_for_start(claimed=True, claimed_after_wait=False):
+def test_show_opens_a_window_only_when_no_page_is_connected():
+    ccm = load()
+    opened = []
+    ccm.open_monitor_window = opened.append
+    server = ccm.MonitorServer((ccm.HOST, 0), ccm.MonitorHandler)
+    port = server.server_address[1]
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+
+    def show(origin):
+        c = http.client.HTTPConnection(ccm.HOST, port, timeout=5)
+        c.request("POST", "/show", body="{}", headers={"Origin": origin})
+        return c.getresponse().status
+
+    try:
+        ccm.missed_heartbeats = 1
+        assert show(f"http://{ccm.HOST}:{port}") == 204 and opened == [], "a connected page got a second window"
+        ccm.missed_heartbeats = 2
+        assert show("http://attacker.example") == 403 and opened == [], "a foreign page opened a window"
+        assert show(f"http://{ccm.HOST}:{port}") == 204 and opened == [port], opened
+        assert ccm.missed_heartbeats == 0, "the new window does not get the full time to connect"
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_show_running_monitor_reaches_the_monitor_on_its_saved_port():
+    ccm = load()
+    ccm.CACHE = Path(tempfile.mkdtemp())
+    opened = []
+    ccm.open_monitor_window = opened.append
+    ccm.missed_heartbeats = 5
+    assert not ccm.show_running_monitor(), "no saved port, yet the start skips the claim wait"
+    server = ccm.MonitorServer((ccm.HOST, 0), ccm.MonitorHandler)
+    port = server.server_address[1]
+    (ccm.CACHE / "ccm-port.txt").write_text(str(port))
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        assert ccm.show_running_monitor() and opened == [port], opened
+    finally:
+        server.shutdown()
+        server.server_close()
+    assert not ccm.show_running_monitor(), "the saved port no longer answers, yet the start skips the claim wait"
+
+
+def load_for_start(claimed=True, claimed_after_wait=False, shown=False):
     """ccm whose start-up steps record themselves in calls instead of running."""
     ccm = load()
     ccm.CACHE = Path(tempfile.mkdtemp()) / "cache"
@@ -133,7 +178,9 @@ def load_for_start(claimed=True, claimed_after_wait=False):
     ccm.open_monitor_window = lambda port: calls.append(("window", port))
     ccm.threading = types.SimpleNamespace(Thread=thread)
     ccm.try_claim_instance = lambda: claimed
-    ccm.claim_single_instance = lambda: claimed_after_wait
+    ccm.claim_single_instance = lambda: calls.append("wait") or claimed_after_wait
+    ccm.show_running_monitor = lambda: shown
+    ccm.log_start_event = lambda event: None
     return ccm, calls
 
 
@@ -176,17 +223,23 @@ def test_new_monitor_opens_its_window_on_the_bound_port():
     ccm, calls = load_for_start()
     run_main(ccm)
     assert calls == ["free", ("window", 8123), *THREADS], calls
-    assert ccm.CACHE.is_dir()
+    assert (ccm.CACHE / "ccm-port.txt").read_text() == "8123", "a later start cannot find this monitor"
 
 
 def test_monitor_that_waited_for_the_claim_starts():
     ccm, calls = load_for_start(claimed=False, claimed_after_wait=True)
     run_main(ccm)
-    assert calls == ["free", ("window", 8123), *THREADS], calls
+    assert calls == ["wait", "free", ("window", 8123), *THREADS], calls
 
 
 def test_start_with_another_monitor_running_exits():
     ccm, calls = load_for_start(claimed=False)
+    assert run_main(ccm) == "exited"
+    assert calls == ["wait"], calls
+
+
+def test_start_that_a_running_monitor_shows_exits_without_the_wait():
+    ccm, calls = load_for_start(claimed=False, shown=True)
     assert run_main(ccm) == "exited"
     assert calls == [], calls
 
