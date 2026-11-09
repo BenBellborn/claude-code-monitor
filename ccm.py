@@ -1243,11 +1243,18 @@ if __name__ == "__main__":
     if reloaded:
         reloaded_port, instance_lock = map(int, sys.argv[sys.argv.index("--reloaded") + 1:][:2])
     elif not try_claim_instance():
-        # A live monitor shows this session; the wait covers one whose window just closed.
+        # A live monitor shows this session, and opens a window if its last one closed; the wait covers one that is exiting.
+        if show_running_monitor():
+            log_start_event("exit: running monitor shows this session")
+            sys.exit(0)
+        log_start_event("start: another monitor holds the claim, waiting")
         if not claim_single_instance():
+            log_start_event("exit: claim still held, no window opened")
             sys.exit(0)
     server = start_reloaded_server(reloaded_port) if reloaded else start_free_server()
     port = server.server_address[1]
+    (CACHE / "ccm-port.txt").write_text(str(port))
+    log_start_event(f"start: {'reloaded' if reloaded else 'serving'} on port {port}")
     print(f"Claude Monitor running at http://{HOST}:{port}")
     print("Press Ctrl+C to stop.")
     if not reloaded:
