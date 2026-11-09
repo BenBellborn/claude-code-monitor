@@ -215,7 +215,6 @@ def get_active_subagents(transcript):
 
 
 def get_sessions():
-    today = date.today()
     sessions = []
     live_ids = set()
     skipped = False
@@ -224,7 +223,7 @@ def get_sessions():
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
             live_ids.add(data.get("sessionId"))
-            session = find_session(data, today)
+            session = find_session(data)
         except Exception as e:
             print(f"Session {path.name} skipped: {e!r}")
             skipped = True
@@ -250,14 +249,43 @@ def prune_session_stores(found, shown):
         del transcript_totals[transcript]
 
 
-def find_session(s, today):
-    """The card data of a session shown today, or None for one that is not."""
+def is_session_running(s):
+    """False once the session's Claude Code process has exited, as after a crash that left its file behind; a reused pid has
+    another start time. A file without a pid cannot be checked and counts as running."""
+    pid = s.get("pid")
+    if pid is None:
+        return True
+    if sys.platform != "win32":
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            pass
+        return True
+    from ctypes import wintypes
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    handle = kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+    if not handle:
+        return False
+    try:
+        created, exit_code, unused = wintypes.FILETIME(), wintypes.DWORD(), wintypes.FILETIME()
+        kernel32.GetProcessTimes(wintypes.HANDLE(handle), ctypes.byref(created), *(ctypes.byref(unused) for _ in range(3)))
+        kernel32.GetExitCodeProcess(wintypes.HANDLE(handle), ctypes.byref(exit_code))
+    finally:
+        kernel32.CloseHandle(wintypes.HANDLE(handle))
+    start = str(created.dwHighDateTime << 32 | created.dwLowDateTime)
+    return exit_code.value == 259 and s.get("procStart", start) == start  # STILL_ACTIVE
+
+
+def find_session(s):
+    """The card data of a session whose process runs, at any age, or None for one that is not shown."""
     status = s.get("status")
     # "shell": the turn ended but a background shell still runs, so the session still works.
     if status == "shell":
         status = "busy"
-    # updatedAt moves only on a status change, so a session busy or waiting since before midnight stays.
-    if status not in ("busy", "waiting") and datetime.fromtimestamp(s.get("updatedAt", 0) / 1000).date() != today:
+    if not is_session_running(s):
         delete_progress_note(s.get("sessionId"))
         return None
     # A spare is a background session started ahead of a job; it has no prompt or transcript yet.
@@ -270,9 +298,9 @@ def find_session(s, today):
     note, written = read_progress_note(s["sessionId"])
     # A reply that ends with questions writes "Input needed": Claude Code calls the session idle, but it waits for an answer until the
     # next prompt starts a turn after the note. A subagent report or task notification can start a turn with no prompt: the session
-    # then shows busy, and the note waits for that turn to end.
+    # then shows busy, and the note waits for that turn to end. A background agent keeps the status busy after the turn has ended.
     if note == "Input needed" and written >= get_turn_start_time(totals):
-        if status == "busy":
+        if status == "busy" and not totals.get("ended"):
             note = ""
         else:
             status = "waiting"
@@ -296,14 +324,16 @@ def find_session(s, today):
     task = build_running_task(totals) if transcript else ""
     detail, highlight = task, bool(task)
     color = {"busy": "working", "waiting": "waiting"}.get(status, "idle")
-    name = s.get("name")
-    # A copied background session is named "ARC (2)": the number is dropped so it matches its original.
-    if name and s.get("kind") == "bg":
-        name = re.sub(r"\s*\(\d+\)$", "", name)
+    # The session file can hold a name Claude Code made up, such as a background job's; the transcript keeps the /rename title.
+    name = totals.get("title") or s.get("name")
+    # A background session gets its own card, tagged: a copy named "ARC (2)" shows as "ARC[BG]", apart from the ARC it came from.
+    tag = "[BG]" if s.get("kind") == "bg" else ""
+    if name and tag:
+        name = re.sub(r"\s*\(\d+\)$", "", name) + tag
     return {
         "key": s["sessionId"],
         "cwd": cwd,
-        "name": name or Path(cwd).name,
+        "name": name or Path(cwd).name + tag,
         # Sessions in one folder merge only when they share a name; unnamed ones stay apart.
         "dedupe": name or s["sessionId"],
         "updated": s.get("statusUpdatedAt") or s.get("updatedAt", 0),
@@ -1031,7 +1061,7 @@ class MonitorHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         # Any site's page can post to 127.0.0.1; only the monitor's own page sends its Origin.
         port = self.server.server_address[1]
-        if self.path not in ("/config", "/focus", "/place", "/debug") or self.headers.get("Origin") not in (f"http://{HOST}:{port}", f"http://localhost:{port}"):
+        if self.path not in ("/config", "/focus", "/place", "/debug", "/show") or self.headers.get("Origin") not in (f"http://{HOST}:{port}", f"http://localhost:{port}"):
             self.send_error(403)
             return
         try:
@@ -1049,6 +1079,8 @@ class MonitorHandler(BaseHTTPRequestHandler):
             pass
         elif self.path == "/focus":
             focus_session_window(body.get("key"))
+        elif self.path == "/show":
+            open_window_when_unviewed(port)
         elif self.path == "/place":
             place_pinned_window(body.get("title"), body.get("width"), body.get("height"))
         else:

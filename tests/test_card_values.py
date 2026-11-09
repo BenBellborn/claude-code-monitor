@@ -2,7 +2,7 @@ import importlib.util
 import json
 import tempfile
 import time
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 
 CCM_PATH = Path(__file__).resolve().parent.parent / "ccm.py"
@@ -59,7 +59,7 @@ def test_cache_countdown_starts_at_each_reply_and_dims_the_card_when_cold():
         stamp = lambda minutes: datetime.fromtimestamp(time.time() - minutes * 60, timezone.utc).isoformat().replace("+00:00", "Z")
         replies = [{**REAL, "timestamp": stamp(90)}, {**(SYNTHETIC if synthetic else REAL), "timestamp": stamp(minutes_ago)}]
         transcript.write_text("".join(json.dumps(e) + "\n" for e in replies), encoding="utf-8")
-        session = ccm.find_session({"sessionId": "s1", "status": status, "updatedAt": time.time() * 1000}, date.today())
+        session = ccm.find_session({"sessionId": "s1", "status": status, "updatedAt": time.time() * 1000})
         return ccm.build_title_and_cards([{**session, "label": "proj"}])[1]
 
     fresh = card(0.5)
@@ -89,16 +89,16 @@ def test_progress_note_shows_while_busy_or_waiting_and_is_deleted_when_idle():
     note_file.write_text("Step 2/4: tests" + chr(10), encoding="utf-8")
 
     def note(status, updated=time.time()):
-        session = ccm.find_session({"sessionId": "s1", "status": status, "updatedAt": updated * 1000}, date.today())
+        session = ccm.find_session({"sessionId": "s1", "status": status, "updatedAt": updated * 1000})
         return session and session["note"]
 
     assert [note("busy"), note("waiting")] == ["Step 2/4: tests", "Step 2/4: tests"]
-    session = ccm.find_session({"sessionId": "s1", "status": "shell", "updatedAt": 0}, date.today())
+    session = ccm.find_session({"sessionId": "s1", "status": "shell", "updatedAt": 0})
     assert (session["color"], session["note"]) == ("working", "Step 2/4: tests"), "session running a background shell shown idle"
     assert note("idle") == "" and not note_file.exists(), "note of an idle session kept"
     assert note("busy") == "", "earlier task's note shown in a new turn"
     note_file.write_text("old", encoding="utf-8")
-    assert note("idle", updated=0) is None and not note_file.exists(), "note of an idle session from an earlier day kept"
+    assert note("idle", updated=0) == "" and not note_file.exists(), "note of an idle session from an earlier day kept"
 
 
 def test_waiting_note_shows_an_idle_session_as_waiting_until_the_next_prompt():
@@ -106,13 +106,19 @@ def test_waiting_note_shows_an_idle_session_as_waiting_until_the_next_prompt():
     transcript = ccm.PROJECTS_DIR / "p" / "s1.jsonl"
     transcript.parent.mkdir()
 
+    def append(entry):
+        with transcript.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(entry) + chr(10))
+
     def prompt_at(seconds):
         stamp = datetime.fromtimestamp(seconds, timezone.utc).isoformat().replace("+00:00", "Z")
-        with transcript.open("a", encoding="utf-8") as f:
-            f.write(json.dumps({"type": "user", "origin": {"kind": "human"}, "timestamp": stamp, "message": {"content": "x"}}) + chr(10))
+        append({"type": "user", "origin": {"kind": "human"}, "timestamp": stamp, "message": {"content": "x"}})
+
+    def reply_end():
+        append({"type": "assistant", "message": {"id": str(time.time()), "stop_reason": "end_turn", "content": []}})
 
     def card(status="idle"):
-        session = ccm.find_session({"sessionId": "s1", "status": status, "updatedAt": time.time() * 1000}, date.today())
+        session = ccm.find_session({"sessionId": "s1", "status": status, "updatedAt": time.time() * 1000})
         return session["color"], session["note"]
 
     prompt_at(time.time() - 60)
@@ -120,7 +126,12 @@ def test_waiting_note_shows_an_idle_session_as_waiting_until_the_next_prompt():
     note_file.write_text("Input needed", encoding="utf-8")
     assert card() == ("waiting", "Input needed"), "questions shown but the card is not waiting"
     assert card() == ("waiting", "Input needed") and note_file.exists(), "waiting note deleted before the answer"
+    assert card("busy") == ("working", "") and note_file.exists(), "turn still running shown blocked, or note lost"
+    reply_end()
+    assert card("busy") == ("waiting", "Input needed"), "turn ended but a background agent keeps the card working"
+    append({"type": "user", "isMeta": True, "message": {"content": "<task-notification>"}})
     assert card("busy") == ("working", "") and note_file.exists(), "turn started by a subagent report shown blocked, or note lost"
+    reply_end()
     assert card() == ("waiting", "Input needed"), "questions still open after that turn but the card is not waiting"
     prompt_at(time.time() + 60)
     assert card() == ("idle", "") and not note_file.exists(), "waiting note kept after the next prompt"
@@ -153,7 +164,7 @@ def test_cache_timer_counts_from_the_last_reply_or_else_the_transcript_start():
     def cache_start(*entries):
         with transcript.open("a", encoding="utf-8") as f:
             f.write("".join(json.dumps(e) + chr(10) for e in entries))
-        return ccm.find_session({"sessionId": "s1", "status": "idle", "updatedAt": time.time() * 1000}, date.today())["cache_start"]
+        return ccm.find_session({"sessionId": "s1", "status": "idle", "updatedAt": time.time() * 1000})["cache_start"]
 
     assert cache_start({"type": "custom-title"}, {"type": "system", "timestamp": stamp(cleared)}) == cleared, "a new transcript counts from 0"
     assert cache_start({**REAL, "timestamp": stamp(cleared + 30)}) == cleared + 30, "a reply does not restart the timer"

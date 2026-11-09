@@ -28,9 +28,9 @@ def test_two_unnamed_sessions_in_one_folder_both_show():
     assert shown == [("s0", "repo"), ("s1", "repo")], f"two live unnamed sessions in one folder shown as {shown}"
 
 
-def test_background_copy_merges_into_its_original():
+def test_background_copy_merges_into_the_background_session_it_copies():
     shown = sessions_shown({"kind": "bg", "name": "ARC"}, {"kind": "bg", "name": "ARC (2)"})
-    assert shown == [("s1", "ARC")], f"a background copy 'ARC (2)' did not merge into 'ARC': {shown}"
+    assert shown == [("s1", "ARC[BG]")], f"a background copy 'ARC (2)' did not merge into 'ARC[BG]': {shown}"
 
 
 def test_numbered_interactive_session_keeps_its_name():
