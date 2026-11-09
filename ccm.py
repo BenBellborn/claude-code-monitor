@@ -38,7 +38,7 @@ PROGRESS_DIR = CACHE / "progress"
 # restarts it; Claude Code asks for the 1-hour cache); created with the defaults when missing. Kept out of the plugin folder,
 # which a plugin update replaces.
 CONFIG_PATH = Path.home() / ".claude" / "ccm" / "config.json"
-DEFAULT_CONFIG = {"colors": {}, "window": {"min": False, "width": 600, "height": 400}, "cache": {"ttlMinutes": 60}}
+DEFAULT_CONFIG = {"colors": {}, "window": {"width": 600, "height": 400}, "cache": {"ttlMinutes": 60}}
 # Claude Code's built-in theme colors, copied from its build: they are compiled in, not kept in a file. The theme has no page
 # background (the terminal sets it), so dark themes get black and light ones white. An -ansi theme uses its plain twin.
 CC_THEMES = {
@@ -632,17 +632,15 @@ def save_config(config):
 
 
 def save_window_mode(window):
-    """Stores the page's Min/Max and pinned window size; other keys in the request are dropped."""
+    """Stores the pinned window's size and position; other keys in the request are dropped."""
     saved = read_saved_config()
     # A file that does not parse is one the user is editing; it is never overwritten.
     if saved is None:
         return
     if not isinstance(saved.get("window"), dict):
         saved["window"] = {}
-    if isinstance(window.get("min"), bool):
-        saved["window"]["min"] = window["min"]
     # x and y are screen pixels and go negative on a monitor left of or above the main one.
-    # A Min window with one card is under 100 pixels tall.
+    # A window that shows one Min card is under 100 pixels tall.
     limits = {"width": (1, 10000), "height": (1, 10000), "x": (-100000, 100000), "y": (-100000, 100000)}
     for key, (low, high) in limits.items():
         if isinstance(window.get(key), int) and low <= window[key] <= high:
@@ -796,12 +794,10 @@ PAGE = """<!DOCTYPE html>
         h1 { margin-top: 0.335em; }
         .top { display: flex; justify-content: space-between; align-items: center; }
         .buttons { display: flex; gap: 0.5rem; }
-        /* Min puts the title row under the cards and statusline pills, with no scrollbar; once the window cuts them off, they hide and the padding goes, so a tiny window still shows the cards. */
-        html:has(#sessions.min) { overflow: hidden; }
-        body:has(> #sessions.min.cut) { padding: 0; }
-        body:has(> #sessions.min) > .top { order: 1; }
-        body:has(> #sessions.min) > #note { order: 2; }
-        #pin, #size { background: transparent; color: var(--light); border: 1px solid var(--dim); border-radius: 6px; padding: 4px 12px; cursor: pointer; }
+        /* The page never scrolls: it steps down to fit the window, and a tiny window clips what is left. With the title row hidden the padding goes too. */
+        html { overflow: hidden; }
+        body:has(> #sessions.cut) { padding: 0; }
+        #pin { background: transparent; color: var(--light); border: 1px solid var(--dim); border-radius: 6px; padding: 4px 12px; cursor: pointer; }
         .card { border: 1px solid var(--dim); padding: 1rem 15px 1rem 1rem; border-radius: 6px; margin-bottom: 0.75rem; border-left: 4px solid var(--dim); box-sizing: border-box; cursor: pointer; }
         .working { border-left-color: var(--working); }
         .waiting { border-left-color: var(--waiting); }
@@ -824,49 +820,48 @@ PAGE = """<!DOCTYPE html>
         .stopped { color: #ffffff; background: var(--stopped); padding: 0 4px; border-radius: 3px; font-weight: 600; }
         /* Min: each card is one line with no gaps; the height lock is off, so a card never stays tall. */
         .mini { display: none; }
-        #sessions.min .card { padding: 2px 8px; margin: 0; border-radius: 0; border-width: 0 0 1px 4px; min-height: 0 !important; }
-        #sessions.min .card > :not(.mini) { display: none; }
-        #sessions.min .mini { display: flex; font-size: 0.9rem; }
+        .card.min { padding: 2px 8px; margin: 0; border-radius: 0; border-width: 0 0 1px 4px; min-height: 0 !important; }
+        .card.min > :not(.mini) { display: none; }
+        .card.min .mini { display: flex; font-size: 0.9rem; }
         /* The minutes until the prompt cache goes cold stay at the line's right end; the edge clips the text before them. */
         .head { display: flex; }
         .line { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; }
         .ttl { flex-shrink: 0; padding-left: 0.5rem; color: var(--muted); }
-        #sessions.min .idle .mini { color: var(--muted); }
+        .card.min.idle .mini { color: var(--muted); }
         .highlight { color: var(--text); background: var(--highlight); padding: 0 4px; border-radius: 3px; }
     </style>
 </head>
 <body>
-    <div class="top"><h1>Claude Code Monitor</h1><span class="buttons"><button id="size">Min</button><button id="pin" hidden>Pin on top</button></span></div>
+    <div class="top"><h1>Claude Code Monitor</h1><span class="buttons"><button id="pin" hidden>Pin on top</button></span></div>
     <div id="sessions">__SESSIONS__</div>
     <p class="note" id="note"></p>
     <script>
         const sessions = document.getElementById("sessions"), note = document.getElementById("note"), pin = document.getElementById("pin");
         // Chrome and Edge show the cards in a picture-in-picture window that stays on top.
         pin.hidden = !("documentPictureInPicture" in window);
-        // Min shows each card as one line, in the tab and the pinned window; it and the pinned window's size are kept in the config file.
-        const size = document.getElementById("size"), windowMode = __WINDOW__;
+        // The pinned window's size and position are kept in the config file.
+        const windowMode = __WINDOW__;
         function saveWindowMode() { fetch("/config", { method: "POST", body: JSON.stringify(windowMode), keepalive: true }).catch(() => { }); }
-        function setMinimized(min) {
-            sessions.classList.toggle("min", min);
-            size.textContent = min ? "Max" : "Min";
-            hideCutRows();
-        }
-        // Min hides the pills, title and buttons as one group when the window cuts any of them off, and the note on its own; the cards are never hidden.
-        function hideCutRows() {
-            const doc = sessions.ownerDocument, group = [sessions.querySelector(".usage"), doc.querySelector(".top")].filter(Boolean);
+        // From the full layout, while the cards and pills reach below the window: hide the title row with its buttons and the pills,
+        // then show the cards as one line each (Min), from the bottom card up. The note hides once the window cuts it off.
+        function fitToWindow() {
+            const doc = sessions.ownerDocument, view = doc.defaultView, group = [sessions.querySelector(".usage"), doc.querySelector(".top")].filter(Boolean);
+            const cards = [...sessions.querySelectorAll(".card")];
             for (const row of [...group, note, document.querySelector(".top")]) row.style.display = "";
             sessions.classList.remove("cut");
-            if (!windowMode.min) return;
-            const isCut = row => Math.floor(row.getBoundingClientRect().bottom) > doc.defaultView.innerHeight;
-            if (group.some(isCut)) {
+            for (const card of cards) card.classList.remove("min");
+            const isCut = row => Math.floor(row.getBoundingClientRect().bottom) > view.innerHeight;
+            if (isCut(sessions)) {
                 for (const row of group) row.style.display = "none";
                 sessions.classList.add("cut");
             }
+            for (const card of cards.reverse()) {
+                if (!isCut(sessions)) break;
+                card.classList.add("min");
+            }
             if (isCut(note)) note.style.display = "none";
         }
-        window.addEventListener("resize", hideCutRows);
-        size.onclick = () => { windowMode.min = !windowMode.min; setMinimized(windowMode.min); saveWindowMode(); };
-        setMinimized(windowMode.min);
+        window.addEventListener("resize", fitToWindow);
         // The theme colors and the title change live, in the tab and the pinned window; the title shows in the taskbar.
         let pipColors = null, pipDocument = null;
         pin.onclick = async () => {
@@ -905,12 +900,12 @@ PAGE = """<!DOCTYPE html>
             const header = Object.assign(pip.document.createElement("div"), { className: "top", textContent: "Claude Code Monitor" });
             header.style.cssText = "font-weight: 600; margin: 0.5rem 0;";
             const buttons = Object.assign(pip.document.createElement("span"), { className: "buttons" });
-            buttons.append(size, unpin);
+            buttons.append(unpin);
             header.append(buttons);
             pip.document.body.append(header, sessions, note);
             pin.hidden = true;
-            hideCutRows();
-            pip.addEventListener("resize", hideCutRows);
+            fitToWindow();
+            pip.addEventListener("resize", fitToWindow);
             const readBounds = () => {
                 const ratio = pip.devicePixelRatio;
                 return { width: pip.innerWidth, height: pip.innerHeight, x: Math.round(pip.screenX * ratio), y: Math.round(pip.screenY * ratio) };
@@ -938,11 +933,10 @@ PAGE = """<!DOCTYPE html>
                 clearTimeout(saveTimer);
                 debugBounds("close", windowMode);
                 if (placings < 0) saveBounds();
-                pin.before(size);
                 document.querySelector(".top").after(sessions, note);
                 pin.hidden = false;
                 pipColors = null;
-                hideCutRows();
+                fitToWindow();
             });
         };
         // A click on a card brings the window its session runs in to the front.
@@ -961,7 +955,9 @@ PAGE = """<!DOCTYPE html>
                 card.style.minHeight = maxHeights[key] + "px";
             }
         }
+        // The lock measures the cards at full size, before the first fit makes any Min.
         lockCardHeights();
+        fitToWindow();
         // A reload while the monitor restarts would leave an error page with no script to recover; reload only once the page loads.
         async function reloadWhenUp() {
             for (;;) {
@@ -979,7 +975,7 @@ PAGE = """<!DOCTYPE html>
             sessions.innerHTML = cards;
             for (const style of [document.getElementById("colors"), pipColors]) if (style && style.textContent !== colors) style.textContent = colors;
             lockCardHeights();
-            hideCutRows();
+            fitToWindow();
         };
         let scanning = false;
         // A restarted monitor may bind another port; move to the first one that answers.
@@ -999,8 +995,8 @@ PAGE = """<!DOCTYPE html>
             }
             scanning = false;
         }
-        events.onerror = () => { note.textContent = "Disconnected, retrying…"; hideCutRows(); findMonitor(); };
-        events.onopen = () => { note.textContent = ""; hideCutRows(); };
+        events.onerror = () => { note.textContent = "Disconnected, retrying…"; fitToWindow(); findMonitor(); };
+        events.onopen = () => { note.textContent = ""; fitToWindow(); };
     </script>
 </body>
 </html>

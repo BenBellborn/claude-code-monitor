@@ -39,19 +39,20 @@ window.
 - Opens as a tab in your default browser. In Chrome or Edge its "Pin on top" button moves the cards into a picture-in-picture window
   that stays above other windows; closing that window puts them back in the tab.
 - On Windows, a click on a card brings the window its session runs in to the front: the terminal or IDE, not the tab in it.
-- The "Min" button shows each session as one line, `Busy/Blocked/Idle - name - progress`, with the cache minutes at its right end;
-  "Max" brings the full cards back. The config file keeps the choice.
+- The page fits itself to the window and never scrolls. When the cards do not fit, it first hides the title row, its button and
+  the pills, then shows the cards as one line each, `Busy/Blocked/Idle - name - progress` with the cache minutes at the right end,
+  from the bottom card up. A taller window brings them back.
 
-  <img src="docs/demo-min.gif" width="480" alt="The pinned window in Min mode: one line per session with its cache minutes, the usage pills, and the title row with the Max and Unpin buttons">
+  <img src="docs/demo-min.gif" width="480" alt="A small pinned window: the top cards in full, the bottom ones as one line each with their cache minutes">
 
 - The page takes Claude Code's theme (`/theme`, including a custom theme in `~/.claude/themes`) and follows a change within a
   second. Dark themes get a black page, light ones white; an `-ansi` theme uses its plain twin's colors.
-- `~/.claude/ccm/config.json` holds your own colors over the theme's (`colors`) and the last mode (`window`: `min`, and the pinned
-  window's `width`, `height` and, on Windows, its screen position `x` and `y`, where it opens again), and the prompt cache's lifetime
+- `~/.claude/ccm/config.json` holds your own colors over the theme's (`colors`), the pinned window's size and place (`window`:
+  `width`, `height` and, on Windows, its screen position `x` and `y`, where it opens again), and the prompt cache's lifetime
   (`cache`: `ttlMinutes`, default 60, Claude Code's 1-hour cache). It is created on the first
   page load; a plugin update leaves it alone. The color keys are `background`, `text`, `bright`, `light`, `muted`, `dim`, `working`, `waiting`, `idle`, `stopped`, `highlight`, and
   `red`, `yellow` and `orange` for the statusline's colors, e.g. `"colors": {"working": "#22c55e"}`.
-- Closing the window stops it (after 20 s). The next session start opens it again.
+- Closing the window stops it (after 20 s). The next session start opens it again at once, also within those 20 s.
 - Listens on `127.0.0.1` only, on the first free port from 8080 to 8179.
 - Reads `~/.claude/ccm/config.json`, `~/.claude/sessions`, `~/.claude/projects` (transcripts), `~/.claude/settings.json` (`statusLine`)
   and `~/.claude/cache`. Besides its config file, writes only to `~/.claude/cache`: the last statusline per session and the shared pills,

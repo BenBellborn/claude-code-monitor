@@ -72,18 +72,19 @@ def test_page_and_events_show_cards_pills_and_agent_rows():
         assert '<div class="footer"><span class="red">main</span> | 1 tool calls | 1k in / 0k out</div>' in page, page
         assert '<p class="usage"><span class="pill">5h:1%</span></p>' in page, page
         assert "--working: rgb(78,186,101);" in page and json.loads(ccm.CONFIG_PATH.read_text()) == ccm.DEFAULT_CONFIG, "config file not created"
-        assert post_config(port, {"min": True, "width": 500}, f"http://attacker.example:{port}") == 403, "post from another site"
-        assert post_config(port, {"min": True, "width": 86, "height": "x", "x": -1200, "y": 200000}, f"http://127.0.0.1:{port}") == 204
+        assert post_config(port, {"width": 500}, f"http://attacker.example:{port}") == 403, "post from another site"
+        assert post_config(port, {"width": 86, "height": "x", "x": -1200, "y": 200000}, f"http://127.0.0.1:{port}") == 204
         config = json.loads(ccm.CONFIG_PATH.read_text())
         assert config["window"].get("x") == -1200 and "y" not in config["window"], "screen position not kept or out of range kept"
         config["window"].pop("x")
         config["colors"]["working"] = "#123456"
         ccm.CONFIG_PATH.write_text(json.dumps(config))
         page = get(port, "/")
-        assert 'windowMode = {"min": true, "width": 86, "height": 400}' in page, "window mode not served, or a small Min window's size dropped"
+        assert 'windowMode = {"width": 86, "height": 400}' in page, "window size not served, or a small window's size dropped"
+        assert 'id="size"' not in page and "window.addEventListener(\"resize\", fitToWindow);" in page, "Min/Max button kept or no fit on resize"
         assert "--working: #123456;" in page, "edited color not served"
         ccm.CONFIG_PATH.write_text("{ broken")
-        post_config(port, {"min": False}, f"http://127.0.0.1:{port}")
+        post_config(port, {"width": 300}, f"http://127.0.0.1:{port}")
         assert ccm.CONFIG_PATH.read_text() == "{ broken", "config being edited overwritten"
         (sub / "agent-a.meta.json").write_text(json.dumps({"agentType": "verifier", "finished": True}))
         (tmp / "settings.json").write_text(json.dumps({"theme": "light"}))
