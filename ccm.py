@@ -619,7 +619,7 @@ def build_title_and_cards(sessions):
             f'<div class="card {s["color"]}{faded}" data-key="{html.escape(s["key"])}">'
             f'<div class="mini"><span class="line">{mini}</span>{ttl}</div>'
             f'<div class="head"><span class="line"><b class="name">{html.escape(s["label"])}</b> - {build_model_effort(s["model"], s["effort"])}</span>{ttl}</div>'
-            f'<div class="state">Busy {detail}</div>'
+            f'<div class="state">{detail or "&nbsp;"}</div>'
             f'<div class="progress">{STOPPED_LINES.get(s["color"]) or html.escape(s["progress"]) or "&nbsp;"}</div>{agents}'
             f'<div class="footer">{" | ".join(statuslines.get(s["key"], []) + [html.escape(f) for f in s["footer"]]) or "&nbsp;"}</div>'
             # Always there, so the card keeps its height when a note comes and goes.

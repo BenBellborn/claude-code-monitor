@@ -64,7 +64,7 @@ def test_page_and_events_show_cards_pills_and_agent_rows():
         assert "saveTimer = setTimeout(saveBounds, 2000);" in page, "bounds saved before the window has stopped moving for 2 s"
         assert "placeWindow(false);" in page, "the first placing sizes the window from the outer size of another window"
         assert '<b class="name">proj</b> - <span class="yellow">claude-opus-5-5</span>:<span class="yellow">high</span>' in page, page
-        assert '<div class="state">Busy <span class="highlight">/fix all</span></div>' in page, page
+        assert '<div class="state"><span class="highlight">/fix all</span></div>' in page, page
         assert '<div class="progress">Grep: x · ' in page, page
         assert '<div class="mini"><span class="line">Busy - <b class="name">proj</b> - Task 2/4 · Step 2/2: x</span><span class="ttl">' in page, "one-line view of a running card"
         assert '- verifier - Grep: x</div>' in page, page
