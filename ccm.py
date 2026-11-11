@@ -1223,6 +1223,7 @@ def start_with_instance_claim(command):
 # Counted in 1 s ticks, not wall-clock time: a clock jump (resume from sleep, NTP step) must not end a viewed monitor.
 missed_heartbeats = 0
 NO_VIEWER_EXIT_SECONDS = 20
+RELOAD_VIEWER_WAIT_SECONDS = 70
 
 
 def exit_when_window_closed():
@@ -1367,6 +1368,9 @@ if __name__ == "__main__":
     print("Press Ctrl+C to stop.")
     if not reloaded:
         open_monitor_window(port)
+    else:
+        # A hidden page's timers may fire once a minute, so its reconnect to a reloaded server can take that long.
+        missed_heartbeats = -RELOAD_VIEWER_WAIT_SECONDS
     threading.Thread(target=restart_on_new_version, args=(port,), daemon=True).start()
     threading.Thread(target=run_statuslines, daemon=True).start()
     threading.Thread(target=exit_when_window_closed, daemon=True).start()
