@@ -380,6 +380,7 @@ def find_session(s):
 SCRIPT_ARGUMENT = re.compile(r"[^\s\"']+\.(?:py|js|mjs|cjs|ts|sh|ps1)\b", re.I)
 OWNER = re.compile(r"[\\/](?:skills|mods|plugins)[\\/]([^\\/\s\"']+)", re.I)
 SHELLS = {"bash.exe", "cmd.exe", "pwsh.exe", "powershell.exe"}
+BACKGROUND_SHOW_AFTER_SECONDS = 5
 
 
 def find_background_work(s, session, processes):
@@ -399,7 +400,10 @@ def find_background_work(s, session, processes):
             continue
         if line and not any(all(part in line for part in command) for command in known):
             log_background_process(pid, exe, line)
-            cards.append(build_background_card(session, pid, exe, line, process.start / 1e7 - 11644473600))  # FILETIME to Unix
+            started = process.start / 1e7 - 11644473600  # FILETIME ticks since 1601 to Unix seconds
+            # A short-lived tool process ends before then, so its card does not flash.
+            if time.time() - started >= BACKGROUND_SHOW_AFTER_SECONDS:
+                cards.append(build_background_card(session, pid, exe, line, started))
     return cards
 
 

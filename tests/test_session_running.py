@@ -84,7 +84,7 @@ def test_background_session_has_its_own_card_beside_its_original():
     assert sorted(s["label"] for s in ccm.get_sessions()) == ["CoP", "CoP[BG]"]
 
 
-def cards_with_watcher(status, mcp_args=None, ignore=None):
+def cards_with_watcher(status, mcp_args=None, ignore=None, show_after=0):
     """get_sessions for one session of this test process while a mod's watcher script runs as its child."""
     ccm = load()
     cwd = ccm.SESSIONS_DIR.parent / "repo"
@@ -92,6 +92,7 @@ def cards_with_watcher(status, mcp_args=None, ignore=None):
     script.parent.mkdir(parents=True)
     cwd.mkdir()
     script.write_text("import time\ntime.sleep(30)\n")
+    ccm.BACKGROUND_SHOW_AFTER_SECONDS = show_after
     if ignore:
         ccm.CONFIG_PATH.write_text(json.dumps({"background": {"ignore": ignore}}))
     if mcp_args:
@@ -117,6 +118,14 @@ def test_background_process_of_a_session_has_its_own_card():
     assert cards_html.count('<span class="ttl">00:00 m</span>') == 2, "the running time is not shown in both views"
     log = (cache / "ccm-background.log").read_text(encoding="utf-8")
     assert f"pid {pid} python.exe: " in log and "watch.py" in log, log
+
+
+def test_new_background_process_is_logged_before_its_card_shows():
+    if sys.platform != "win32":
+        return
+    cards, pid, cache = cards_with_watcher("idle", show_after=5)
+    assert [c["key"] for c in cards] == ["s1"], "a process that just started shows a card"
+    assert f"pid {pid} python.exe: " in (cache / "ccm-background.log").read_text(encoding="utf-8"), "a short-lived process is not logged"
 
 
 def test_process_on_the_ignore_list_has_no_card():
