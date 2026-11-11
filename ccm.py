@@ -369,7 +369,7 @@ def find_session(s):
 
 
 # A process a mod or skill starts runs a script from its own folder; the folder name says whose work it is.
-SCRIPT = re.compile(r"[^\s\"']+\.(?:py|js|mjs|cjs|ts|sh|ps1)\b", re.I)
+SCRIPT_ARGUMENT = re.compile(r"[^\s\"']+\.(?:py|js|mjs|cjs|ts|sh|ps1)\b", re.I)
 OWNER = re.compile(r"[\\/](?:skills|mods|plugins)[\\/]([^\\/\s\"']+)", re.I)
 SHELLS = {"bash.exe", "cmd.exe", "pwsh.exe", "powershell.exe"}
 
@@ -405,7 +405,7 @@ def read_known_commands(cwd):
 def build_background_card(session, pid, exe, line, start):
     """The card of one background process, named after its session with [BG]: its owner, script and run time."""
     started = start / 1e7 - 11644473600  # FILETIME ticks since 1601 to Unix seconds
-    owner, script = OWNER.findall(line), SCRIPT.search(line)
+    owner, script = OWNER.findall(line), SCRIPT_ARGUMENT.search(line)
     minutes = int(time.time() - started) // 60
     activity = [owner[-1] if owner else "", Path(script.group()).name if script else "", f"{minutes // 60}h {minutes % 60}m"]
     key = f"{session['key']}:{pid}"
