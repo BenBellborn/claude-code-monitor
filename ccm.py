@@ -236,12 +236,19 @@ def get_sessions():
         except Exception as e:
             print(f"Session {path.name} skipped: {e!r}")
             skipped = True
-    shown = sorted(label_sessions(sessions), key=lambda s: (STATUS_ORDER[s["color"]], -s["cache_start"], s["cwd"].lower()))
+    shown = sorted(label_sessions(sessions), key=sort_key)
     # A file read mid-rewrite hides its session for one render; its footer and scans stay for the next.
     if not skipped:
         prune_session_stores({s["key"] for s in sessions}, {s["key"] for s in shown})
         prune_progress_notes(live_ids)
     return shown
+
+
+def sort_key(s):
+    """Blocked, Busy, Idle. Busy cards sort by name, so they keep their place and a [BG] card sits under its session; the others
+    by most cache time left, then by folder."""
+    busy = s["color"] == "working"
+    return STATUS_ORDER[s["color"]], s["label"].lower() if busy else "", 0 if busy else -s["cache_start"], s["cwd"].lower()
 
 
 def prune_session_stores(found, shown):
@@ -722,7 +729,6 @@ def build_title_and_cards(sessions):
     return build_title(sessions), ("".join(cards) or '<p class="empty">No sessions running.</p>') + build_usage_pills()
 
 
-# Cards sort Blocked, Busy, Idle, then most cache time left first, then by folder.
 STATUS_ORDER = {"waiting": 0, "working": 1, "idle": 2}
 # The status in a card's one-line view, by card color.
 STATUS_WORDS = {"working": "Busy", "waiting": '<span class="stopped">Blocked</span>', "idle": '<span class="stopped">Idle</span>'}
