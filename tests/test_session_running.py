@@ -111,7 +111,10 @@ def test_background_process_of_a_session_has_its_own_card():
     work = [c for c in cards if c["key"] == f"s1:{pid}"]
     assert work, [c["key"] for c in cards]
     assert work[0]["label"] == "ES[BG]" and work[0]["color"] == "working", work[0]
-    assert work[0]["detail"] == "review-watch · watch.py · 0h 0m", work[0]["detail"]
+    assert work[0]["detail"] == "review-watch · watch.py", work[0]
+    _, cards_html = load().build_title_and_cards(work)
+    assert '<b class="name">ES[BG]</b> - review-watch · watch.py</span>' in cards_html, "the one-line view leaves out what runs"
+    assert cards_html.count('<span class="ttl">00:00 m</span>') == 2, "the running time is not shown in both views"
     log = (cache / "ccm-background.log").read_text(encoding="utf-8")
     assert f"pid {pid} python.exe: " in log and "watch.py" in log, log
 

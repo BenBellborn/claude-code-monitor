@@ -424,8 +424,7 @@ def read_known_commands(cwd):
 def build_background_card(session, pid, exe, line, started):
     """The card of one background process, named after its session with [BG]: its owner, script and run time."""
     owner, script = OWNER.findall(line), SCRIPT_ARGUMENT.search(line)
-    minutes = int(time.time() - started) // 60
-    activity = [owner[-1] if owner else "", Path(script.group()).name if script else "", f"{minutes // 60}h {minutes % 60}m"]
+    activity = " · ".join(filter(None, [owner[-1] if owner else "", Path(script.group()).name if script else ""])) or exe
     key = f"{session['key']}:{pid}"
     return {
         **session,
@@ -434,13 +433,14 @@ def build_background_card(session, pid, exe, line, started):
         "dedupe": key,
         "model": exe,
         "effort": pid,
-        "detail": " · ".join(filter(None, activity)),
+        "detail": activity,
         "highlight": True,
         "color": "working",
         "progress": "",
         "footer": [],
         "agents": [],
         "cache_start": started,
+        "running_since": started,
         "note": "",
     }
 
@@ -694,7 +694,9 @@ def build_title_and_cards(sessions):
         ttl_minutes = DEFAULT_CONFIG["cache"]["ttlMinutes"]
     for s in sessions:
         cache_minutes = math.ceil(max(0, s["cache_start"] + ttl_minutes * 60 - time.time()) / 60)
-        ttl = f'<span class="ttl">{cache_minutes}m</span>'
+        # A [BG] card has no prompt cache; its process's running time shows in that place.
+        running = int(time.time() - s["running_since"]) // 60 if s.get("running_since") else None
+        ttl = f'<span class="ttl">{f"{running // 60:02d}:{running % 60:02d} m" if running is not None else f"{cache_minutes}m"}</span>'
         agents = "".join(
             f'<div class="agent">● {build_model_effort(a["model"], a["effort"])} - '
             f'{html.escape(a["type"]) + " - " if a["type"] else ""}{html.escape(a["activity"])}</div>'
@@ -704,7 +706,9 @@ def build_title_and_cards(sessions):
         if s["highlight"]:
             detail = f'<span class="highlight">{detail}</span>'
         faded = " faded" if s["color"] != "working" and cache_minutes == 0 else ""
-        mini = " - ".join(filter(None, [STATUS_WORDS[s["color"]], f'<b class="name">{html.escape(s["label"])}</b>', html.escape(s["note"] or s["progress"])]))
+        # A busy session always has progress; a [BG] card has none, so its activity shows instead.
+        activity = s["note"] or s["progress"] or (s["detail"] if s["color"] == "working" else "")
+        mini = " - ".join(filter(None, [STATUS_WORDS[s["color"]], f'<b class="name">{html.escape(s["label"])}</b>', html.escape(activity)]))
         cards.append(
             f'<div class="card {s["color"]}{faded}" data-key="{html.escape(s["key"])}">'
             f'<div class="mini"><span class="line">{mini}</span>{ttl}</div>'
