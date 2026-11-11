@@ -18,6 +18,7 @@ from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 
 CLAUDE_DIR = Path.home() / ".claude"
 SESSIONS_DIR = CLAUDE_DIR / "sessions"
+CLAUDE_JSON = Path.home() / ".claude.json"
 PROJECTS_DIR = CLAUDE_DIR / "projects"
 FIRST_PORT = 8080
 # The window URL must name the address the server binds: "localhost" may resolve to ::1 first and reach another app there.
@@ -222,18 +223,18 @@ def get_sessions():
     sessions = []
     live_ids = set()
     skipped = False
+    processes = get_processes() if sys.platform == "win32" else {}
     for path in SESSIONS_DIR.glob("*.json"):
         # A session file is Claude Code's: one that fails to read or holds unexpected values must not end the render.
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
             live_ids.add(data.get("sessionId"))
             session = find_session(data)
+            if session:
+                sessions += [session, *find_background_work(data, session, processes)]
         except Exception as e:
             print(f"Session {path.name} skipped: {e!r}")
             skipped = True
-            continue
-        if session:
-            sessions.append(session)
     shown = sorted(label_sessions(sessions), key=lambda s: (STATUS_ORDER[s["color"]], -s["cache_start"], s["cwd"].lower()))
     # A file read mid-rewrite hides its session for one render; its footer and scans stay for the next.
     if not skipped:
@@ -267,20 +268,32 @@ def is_session_running(s):
         except PermissionError:
             pass
         return True
+    process = read_process(pid)
+    return bool(process) and process.running and s.get("procStart", str(process.start)) == str(process.start)
+
+
+def read_process(pid):
+    """A Windows process's start time (FILETIME ticks), whether it still runs, and its command line; None when it cannot be opened.
+    Only PROCESS_QUERY_LIMITED_INFORMATION is asked for, so the processes of an elevated session can be read too."""
     from ctypes import wintypes
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
     kernel32.OpenProcess.restype = wintypes.HANDLE
     handle = kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
     if not handle:
-        return False
+        return None
     try:
         created, exit_code, unused = wintypes.FILETIME(), wintypes.DWORD(), wintypes.FILETIME()
         kernel32.GetProcessTimes(wintypes.HANDLE(handle), ctypes.byref(created), *(ctypes.byref(unused) for _ in range(3)))
         kernel32.GetExitCodeProcess(wintypes.HANDLE(handle), ctypes.byref(exit_code))
+        # ProcessCommandLineInformation (60) fills a UNICODE_STRING: 2-byte length, padding, then the text's address.
+        buffer, size = ctypes.create_string_buffer(65536), wintypes.ULONG()
+        failed = ctypes.WinDLL("ntdll").NtQueryInformationProcess(wintypes.HANDLE(handle), 60, buffer, len(buffer), ctypes.byref(size))
+        length, address = int.from_bytes(buffer.raw[:2], "little"), ctypes.c_void_p.from_buffer(buffer, 8).value
+        command_line = "" if failed or not address else ctypes.wstring_at(address, length // 2)
     finally:
         kernel32.CloseHandle(wintypes.HANDLE(handle))
-    start = str(created.dwHighDateTime << 32 | created.dwLowDateTime)
-    return exit_code.value == 259 and s.get("procStart", start) == start  # STILL_ACTIVE
+    return SimpleNamespace(start=created.dwHighDateTime << 32 | created.dwLowDateTime, running=exit_code.value == 259,  # STILL_ACTIVE
+                           command_line=command_line)
 
 
 def find_session(s):
@@ -352,6 +365,65 @@ def find_session(s):
         # /clear starts a new transcript with no reply yet; its timer counts from the transcript's first entry.
         "cache_start": parse_timestamp(totals.get("last_reply") or totals.get("started")),
         "note": note,
+    }
+
+
+# A process a mod or skill starts runs a script from its own folder; the folder name says whose work it is.
+SCRIPT = re.compile(r"[^\s\"']+\.(?:py|js|mjs|cjs|ts|sh|ps1)\b", re.I)
+OWNER = re.compile(r"[\\/](?:skills|mods|plugins)[\\/]([^\\/\s\"']+)", re.I)
+SHELLS = {"bash.exe", "cmd.exe", "pwsh.exe", "powershell.exe"}
+
+
+def find_background_work(s, session, processes):
+    """A card per process the session's Claude Code started that is no MCP server, no statusLine run and, while the session works,
+    no tool call: work such as a mod's watcher, which the session file and transcript do not show."""
+    known = read_known_commands(session["cwd"])
+    cards = []
+    for pid, (parent, exe) in processes.items():
+        if parent != s.get("pid") or session["color"] == "working" and exe.lower() in SHELLS:
+            continue
+        process = read_process(pid)
+        # cmd.exe quotes with ^" and Windows quotes arguments; a config command has neither.
+        line = process.command_line.replace("^", "").replace('"', "") if process else ""
+        if line and not any(all(part in line for part in command) for command in known):
+            cards.append(build_background_card(session, pid, exe, line, process.start))
+    return cards
+
+
+def read_known_commands(cwd):
+    """The session's MCP server and statusLine commands, each as its command and arguments."""
+    # ponytail: plugin MCP servers are not read; add their .mcp.json files when a plugin server shows as background work.
+    user = read_json(CLAUDE_JSON) or {}
+    local = user.get("projects", {}).get(cwd.replace("\\", "/"), {})
+    project = read_json(Path(cwd) / ".mcp.json") or {} if cwd else {}
+    servers = {**user.get("mcpServers", {}), **local.get("mcpServers", {}), **project.get("mcpServers", {})}
+    statusline = ((read_json(CLAUDE_DIR / "settings.json") or {}).get("statusLine") or {}).get("command")
+    commands = [[server["command"], *server.get("args", [])] for server in servers.values() if server.get("command")]
+    return commands + ([[statusline]] if statusline else [])
+
+
+def build_background_card(session, pid, exe, line, start):
+    """The card of one background process, named after its session with [BG]: its owner, script and run time."""
+    started = start / 1e7 - 11644473600  # FILETIME ticks since 1601 to Unix seconds
+    owner, script = OWNER.findall(line), SCRIPT.search(line)
+    minutes = int(time.time() - started) // 60
+    activity = [owner[-1] if owner else "", Path(script.group()).name if script else "", f"{minutes // 60}h {minutes % 60}m"]
+    key = f"{session['key']}:{pid}"
+    return {
+        **session,
+        "key": key,
+        "name": session["name"].removesuffix("[BG]") + "[BG]",
+        "dedupe": key,
+        "model": exe,
+        "effort": pid,
+        "detail": " · ".join(filter(None, activity)),
+        "highlight": True,
+        "color": "working",
+        "progress": "",
+        "footer": [],
+        "agents": [],
+        "cache_start": started,
+        "note": "",
     }
 
 
@@ -723,7 +795,8 @@ def focus_session_window(key):
     Windows only."""
     if sys.platform != "win32":
         return
-    window = find_window_of_ancestor(find_session_pid(key), get_parent_pids(), get_process_windows())
+    parents = {pid: parent for pid, (parent, _) in get_processes().items()}
+    window = find_window_of_ancestor(find_session_pid(key.split(":")[0]), parents, get_process_windows())
     if not window:
         return
     user32 = ctypes.WinDLL("user32")
@@ -757,8 +830,8 @@ def find_window_of_ancestor(pid, parents, windows):
     return None
 
 
-def get_parent_pids():
-    """Every running process's parent pid, by pid."""
+def get_processes():
+    """Every running process's parent pid and exe name, by pid."""
     from ctypes import wintypes
     class ProcessEntry(ctypes.Structure):
         _fields_ = [("dwSize", wintypes.DWORD), ("cntUsage", wintypes.DWORD), ("th32ProcessID", wintypes.DWORD),
@@ -769,13 +842,13 @@ def get_parent_pids():
     kernel32.CreateToolhelp32Snapshot.restype = ctypes.c_void_p
     snapshot = ctypes.c_void_p(kernel32.CreateToolhelp32Snapshot(2, 0))  # TH32CS_SNAPPROCESS
     entry = ProcessEntry(dwSize=ctypes.sizeof(ProcessEntry))
-    parents = {}
+    processes = {}
     found = kernel32.Process32FirstW(snapshot, ctypes.byref(entry))
     while found:
-        parents[entry.th32ProcessID] = entry.th32ParentProcessID
+        processes[entry.th32ProcessID] = (entry.th32ParentProcessID, entry.szExeFile)
         found = kernel32.Process32NextW(snapshot, ctypes.byref(entry))
     kernel32.CloseHandle(snapshot)
-    return parents
+    return processes
 
 
 def get_process_windows():

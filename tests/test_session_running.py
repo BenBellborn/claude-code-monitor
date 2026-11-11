@@ -17,6 +17,7 @@ def load():
     spec.loader.exec_module(ccm)
     tmp = Path(tempfile.mkdtemp())
     ccm.SESSIONS_DIR, ccm.PROJECTS_DIR, ccm.PROGRESS_DIR = tmp / "sessions", tmp / "projects", tmp / "progress"
+    ccm.CLAUDE_JSON = tmp / ".claude.json"
     ccm.SESSIONS_DIR.mkdir()
     (ccm.PROJECTS_DIR / "p").mkdir(parents=True)
     ccm.PROGRESS_DIR.mkdir()
@@ -81,6 +82,41 @@ def test_background_session_has_its_own_card_beside_its_original():
         (ccm.SESSIONS_DIR / f"{i}.json").write_text(json.dumps(
             {"sessionId": f"s{i}", "cwd": "C:/x", "status": "idle", "name": "CoP", "kind": kind, "pid": os.getpid()}))
     assert sorted(s["label"] for s in ccm.get_sessions()) == ["CoP", "CoP[BG]"]
+
+
+def cards_with_watcher(status, mcp_args=None):
+    """get_sessions for one session of this test process while a mod's watcher script runs as its child."""
+    ccm = load()
+    cwd = ccm.SESSIONS_DIR.parent / "repo"
+    script = ccm.SESSIONS_DIR.parent / "mods" / "review-watch" / "scripts" / "watch.py"
+    script.parent.mkdir(parents=True)
+    cwd.mkdir()
+    script.write_text("import time\ntime.sleep(30)\n")
+    if mcp_args:
+        (cwd / ".mcp.json").write_text(json.dumps({"mcpServers": {"w": {"command": "python", "args": mcp_args}}}))
+    (ccm.SESSIONS_DIR / "1.json").write_text(json.dumps({"sessionId": "s1", "cwd": str(cwd), "status": status, "name": "ES", "pid": os.getpid()}))
+    watcher = subprocess.Popen([sys.executable, str(script)])
+    try:
+        return ccm.get_sessions(), watcher.pid
+    finally:
+        watcher.kill()
+
+
+def test_background_process_of_a_session_has_its_own_card():
+    if sys.platform != "win32":
+        return
+    cards, pid = cards_with_watcher("idle")
+    work = [c for c in cards if c["key"] == f"s1:{pid}"]
+    assert work, [c["key"] for c in cards]
+    assert work[0]["label"] == "ES[BG]" and work[0]["color"] == "working", work[0]
+    assert work[0]["detail"] == "review-watch · watch.py · 0h 0m", work[0]["detail"]
+
+
+def test_mcp_server_of_a_session_has_no_card():
+    if sys.platform != "win32":
+        return
+    cards, _ = cards_with_watcher("idle", mcp_args=["watch.py"])
+    assert [c["key"] for c in cards] == ["s1"], "an MCP server shows as background work"
 
 
 def test_spare_session_has_no_card():
