@@ -49,7 +49,9 @@ window.
   second. Dark themes get a black page, light ones white; an `-ansi` theme uses its plain twin's colors.
 - `~/.claude/ccm/config.json` holds your own colors over the theme's (`colors`), the pinned window's size and place (`window`:
   `width`, `height` and, on Windows, its screen position `x` and `y`, where it opens again), and the prompt cache's lifetime
-  (`cache`: `ttlMinutes`, default 60, Claude Code's 1-hour cache). It is created on the first
+  (`cache`: `ttlMinutes`, default 60, Claude Code's 1-hour cache), and the child processes that get no `[BG]` card
+  (`background`: `ignore`, default `["git.exe"]`; an entry skips each process whose command line holds it, e.g.
+  `"background": {"ignore": ["git.exe", "node.exe"]}`). It is created on the first
   page load; a plugin update leaves it alone. The color keys are `background`, `text`, `bright`, `light`, `muted`, `dim`, `working`, `waiting`, `idle`, `stopped`, `highlight`, and
   `red`, `yellow` and `orange` for the statusline's colors, e.g. `"colors": {"working": "#22c55e"}`.
 - Closing the window stops it (after 20 s). The next session start opens it again at once, also within those 20 s.

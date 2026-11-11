@@ -40,7 +40,8 @@ PROGRESS_DIR = CACHE / "progress"
 # restarts it; Claude Code asks for the 1-hour cache); created with the defaults when missing. Kept out of the plugin folder,
 # which a plugin update replaces.
 CONFIG_PATH = Path.home() / ".claude" / "ccm" / "config.json"
-DEFAULT_CONFIG = {"colors": {}, "window": {"width": 600, "height": 400}, "cache": {"ttlMinutes": 60}}
+# background.ignore: Claude Code runs git itself, for its status and file checks.
+DEFAULT_CONFIG = {"colors": {}, "window": {"width": 600, "height": 400}, "cache": {"ttlMinutes": 60}, "background": {"ignore": ["git.exe"]}}
 # Claude Code's built-in theme colors, copied from its build: they are compiled in, not kept in a file. The theme has no page
 # background (the terminal sets it), so dark themes get black and light ones white. An -ansi theme uses its plain twin.
 CC_THEMES = {
@@ -378,6 +379,8 @@ def find_background_work(s, session, processes):
     """A card per process the session's Claude Code started that is no MCP server, no statusLine run and, while the session works,
     no tool call: work such as a mod's watcher, which the session file and transcript do not show."""
     known = read_known_commands(session["cwd"])
+    ignored = read_config()["background"]["ignore"]
+    ignored = [entry.lower() for entry in ignored if isinstance(entry, str)] if isinstance(ignored, list) else []
     cards = []
     for pid, (parent, exe) in processes.items():
         if parent != s.get("pid") or session["color"] == "working" and exe.lower() in SHELLS:
@@ -385,9 +388,25 @@ def find_background_work(s, session, processes):
         process = read_process(pid)
         # cmd.exe quotes with ^" and Windows quotes arguments; a config command has neither.
         line = process.command_line.replace("^", "").replace('"', "") if process else ""
+        if any(entry in line.lower() for entry in ignored):
+            continue
         if line and not any(all(part in line for part in command) for command in known):
-            cards.append(build_background_card(session, pid, exe, line, process.start))
+            log_background_process(pid, exe, line)
+            cards.append(build_background_card(session, pid, exe, line, process.start / 1e7 - 11644473600))  # FILETIME to Unix
     return cards
+
+
+def log_background_process(pid, exe, line):
+    """Logs each process once that gets a [BG] card, so ones worth skipping can be found."""
+    # Debug: remove once the skip list is settled.
+    if pid in logged_background_pids:
+        return
+    logged_background_pids.add(pid)
+    with (CACHE / "ccm-background.log").open("a", encoding="utf-8") as log:
+        log.write(f"{datetime.now():%Y-%m-%d %H:%M:%S} pid {pid} {exe}: {line}\n")
+
+
+logged_background_pids = set()
 
 
 def read_known_commands(cwd):
@@ -402,9 +421,8 @@ def read_known_commands(cwd):
     return commands + ([[statusline]] if statusline else [])
 
 
-def build_background_card(session, pid, exe, line, start):
+def build_background_card(session, pid, exe, line, started):
     """The card of one background process, named after its session with [BG]: its owner, script and run time."""
-    started = start / 1e7 - 11644473600  # FILETIME ticks since 1601 to Unix seconds
     owner, script = OWNER.findall(line), SCRIPT_ARGUMENT.search(line)
     minutes = int(time.time() - started) // 60
     activity = [owner[-1] if owner else "", Path(script.group()).name if script else "", f"{minutes // 60}h {minutes % 60}m"]
