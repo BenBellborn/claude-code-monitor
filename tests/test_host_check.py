@@ -66,6 +66,23 @@ def test_foreign_post_gets_its_403_when_its_body_comes_late():
         server.server_close()
 
 
+def test_debug_post_without_line_gets_400():
+    spec = importlib.util.spec_from_file_location("ccm", CCM_PATH)
+    ccm = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(ccm)
+    ccm.CACHE = Path(tempfile.mkdtemp())
+    server = ccm.MonitorServer(("127.0.0.1", 0), ccm.MonitorHandler)
+    port = server.server_address[1]
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        c = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        c.request("POST", "/debug", body=b"{}", headers={"Host": f"127.0.0.1:{port}", "Origin": f"http://127.0.0.1:{port}"})
+        assert c.getresponse().status == 400
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

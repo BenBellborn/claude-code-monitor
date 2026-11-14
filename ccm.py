@@ -1243,6 +1243,12 @@ PAGE = """<!DOCTYPE html>
 """
 
 
+def log_window(text):
+    # Debug: what the page loads and saves for the pinned window; remove once the position is right.
+    with (CACHE / "ccm-window.log").open("a", encoding="utf-8") as log:
+        log.write(f"{datetime.now():%H:%M:%S} {text}\n")
+
+
 class MonitorHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         # A foreign Host is a DNS-rebinding page reaching 127.0.0.1; it must not read the sessions.
@@ -1277,28 +1283,22 @@ class MonitorHandler(BaseHTTPRequestHandler):
         except (ValueError, RecursionError):
             body = None
         port = self.server.server_address[1]
-        if self.path not in ("/config", "/focus", "/place", "/debug", "/show", "/horn") or self.headers.get("Origin") not in (f"http://{HOST}:{port}", f"http://localhost:{port}"):
+        actions = {
+            "/debug": lambda: log_window(body["line"]),
+            "/config": lambda: (log_window(f"config {body}"), save_window_mode(body)),
+            "/focus": lambda: focus_session_window(body.get("key")),
+            "/show": lambda: open_window_when_unviewed(port),
+            "/horn": lambda: save_horn(body.get("key"), body.get("on")),
+            "/place": lambda: place_pinned_window(body.get("title"), body.get("width"), body.get("height")),
+        }
+        if self.path not in actions or self.headers.get("Origin") not in (f"http://{HOST}:{port}", f"http://localhost:{port}"):
             self.send_error(403)
             return
-        if not isinstance(body, dict):
+        malformed = not isinstance(body, dict) or (self.path == "/debug" and "line" not in body)
+        if malformed:
             self.send_error(400)
             return
-        # Debug: what the page loads and saves for the pinned window; remove once the position is right.
-        if self.path in ("/debug", "/config"):
-            with (CACHE / "ccm-window.log").open("a", encoding="utf-8") as log:
-                log.write(f"{datetime.now():%H:%M:%S} {body['line'] if self.path == '/debug' else f'config {body}'}\n")
-        if self.path == "/debug":
-            pass
-        elif self.path == "/focus":
-            focus_session_window(body.get("key"))
-        elif self.path == "/show":
-            open_window_when_unviewed(port)
-        elif self.path == "/horn":
-            save_horn(body.get("key"), body.get("on"))
-        elif self.path == "/place":
-            place_pinned_window(body.get("title"), body.get("width"), body.get("height"))
-        else:
-            save_window_mode(body)
+        actions[self.path]()
         self.send_response(204)
         self.end_headers()
 
