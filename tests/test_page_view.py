@@ -38,7 +38,7 @@ def test_page_and_events_show_cards_pills_and_agent_rows():
     ccm.SESSIONS_DIR, ccm.PROJECTS_DIR = tmp / "sessions", tmp / "projects"
     ccm.CONFIG_PATH = tmp / "ccm" / "config.json"
     ccm.CLAUDE_DIR = tmp
-    ccm.PROGRESS_DIR = tmp
+    ccm.PROGRESS_DIR = ccm.CACHE = tmp
     (tmp / "ccm-progress-s1.txt").write_text("Task 2/4 · Step 2/2: x", encoding="utf-8")
     ccm.SESSIONS_DIR.mkdir()
     sub = ccm.PROJECTS_DIR / "p" / "s1" / "subagents"
@@ -79,6 +79,7 @@ def test_page_and_events_show_cards_pills_and_agent_rows():
         assert post_config(port, {"width": 86, "height": "x", "x": -1200, "y": 200000}, f"http://127.0.0.1:{port}") == 204
         config = json.loads(ccm.CONFIG_PATH.read_text())
         assert config["window"].get("x") == -1200 and "y" not in config["window"], "screen position not kept or out of range kept"
+        assert "config {'width': 86" in (tmp / "ccm-window.log").read_text(encoding="utf-8"), "the test logged to the live monitor's window log"
         config["window"].pop("x")
         config["colors"]["working"] = "#123456"
         ccm.CONFIG_PATH.write_text(json.dumps(config))
