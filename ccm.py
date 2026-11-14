@@ -750,12 +750,15 @@ def continue_limited_sessions():
     hit again writes a new entry with a new uuid, so the next wait starts by itself."""
     sent = set()
     while True:
-        for s in update_sessions():
-            stop = s.get("limit_stop")
-            due = bool(stop) and stop["uuid"] not in sent and time.time() >= stop["resets_at"] + LIMIT_CONTINUE_DELAY_SECONDS
-            if due:
-                send_continue(s["pid"])
-                sent.add(stop["uuid"])
+        try:
+            for s in update_sessions():
+                stop = s.get("limit_stop")
+                due = bool(stop) and stop["uuid"] not in sent and time.time() >= stop["resets_at"] + LIMIT_CONTINUE_DELAY_SECONDS
+                if due:
+                    send_continue(s["pid"])
+                    sent.add(stop["uuid"])
+        except Exception as e:
+            print(f"Continue pass failed: {e!r}")
         time.sleep(15)
 
 

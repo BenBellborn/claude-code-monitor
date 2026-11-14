@@ -5,8 +5,11 @@ import subprocess
 import sys
 import tempfile
 import time
+import types
 from datetime import datetime
 from pathlib import Path
+
+import pytest
 
 CCM_PATH = Path(__file__).resolve().parent.parent / "ccm.py"
 RESETS_AT = 1_800_000_000
@@ -86,3 +89,29 @@ def test_send_continue_types_continue_and_enter_into_the_session_console():
     finally:
         child.kill()
     assert out.strip() == "continue"
+
+
+def test_continue_loop_goes_on_after_an_error_in_one_pass():
+    class StopLoop(Exception):
+        pass
+
+    ccm = load()
+    sent, sleeps = [], []
+
+    def send_continue(pid):
+        if not sent:
+            sent.append(None)
+            raise OSError("no console")
+        sent.append(pid)
+
+    def sleep(seconds):
+        sleeps.append(seconds)
+        if len(sleeps) == 2:
+            raise StopLoop
+
+    ccm.update_sessions = lambda: [{"pid": 1, "limit_stop": {"uuid": "u1", "resets_at": 0}}]
+    ccm.send_continue = send_continue
+    ccm.time = types.SimpleNamespace(time=time.time, sleep=sleep)
+    with pytest.raises(StopLoop):
+        ccm.continue_limited_sessions()
+    assert sent == [None, 1], "an error in one pass ends the continue loop"
