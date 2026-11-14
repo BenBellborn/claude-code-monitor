@@ -205,7 +205,7 @@ def run_main(ccm, *args, detached=True):
             os.environ["CCM_DETACHED"] = flag
 
 
-THREADS = ["restart_on_new_version", "run_statuslines", "exit_when_window_closed"]
+THREADS = ["restart_on_new_version", "run_statuslines", "continue_limited_sessions", "exit_when_window_closed"]
 
 
 def test_start_relaunches_itself_detached():

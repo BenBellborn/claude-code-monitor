@@ -31,6 +31,8 @@ DETACHED = {
 }
 # A subagent stopped or killed mid-call is never marked finished; one silent this long is gone. A tool call times out at 10 minutes.
 SUBAGENT_GONE_SECONDS = 15 * 60
+# A session stopped at a usage limit gets "continue" this long after the limit resets.
+LIMIT_CONTINUE_DELAY_SECONDS = 60
 SCRIPT = Path(__file__).resolve()
 CACHE = Path.home() / ".claude" / "cache"
 # A session writes ccm-progress-<sessionId>.txt here; its text shows under the card while the session is busy or waiting, and
@@ -149,7 +151,7 @@ def scan_transcript(transcript):
         transcript,
         {"offset": 0, "seen": set(), "in": 0, "out": 0, "turn_start": None, "turn_calls": 0, "turn_prompt": "", "turn_skill": None,
          "model": "?", "effort": "?", "context": 0, "activity": None, "ended": False, "last_reply": None, "started": None,
-         "title": None},
+         "title": None, "limit_stop": None},
     )
     # A subagent's transcript may not exist yet.
     try:
@@ -166,34 +168,51 @@ def scan_transcript(transcript):
             e = json.loads(line)
         except ValueError:
             continue
-        totals["started"] = totals["started"] or e.get("timestamp")
-        if e.get("type") == "custom-title" and e.get("customTitle"):
-            totals["title"] = e["customTitle"]
-        if is_prompt(e):
-            totals.update(turn_start=e.get("timestamp"), turn_calls=0, turn_prompt=read_prompt_text(e), turn_skill=None, activity=None)
-        if e.get("type") in ("user", "assistant"):
-            totals["ended"] = (e.get("message") or {}).get("stop_reason") == "end_turn"
-        message = e.get("message") if e.get("type") == "assistant" else None
-        # API errors and limit notices are written as synthetic replies with no model, effort or usage of their own.
-        if not message or e.get("isApiErrorMessage") or message.get("model") == "<synthetic>":
-            continue
-        totals.update(model=message.get("model", "?"), effort=e.get("effort", "?"), last_reply=e.get("timestamp"))
-        if e.get("attributionSkill"):
-            totals["turn_skill"] = e["attributionSkill"]
-        for block in message.get("content", []):
-            if block.get("type") == "tool_use":
-                totals["turn_calls"] += 1
-                if block.get("name") not in SILENT_TOOLS:
-                    totals["activity"] = format_activity(block)
-        # A reply with several content blocks is written once per block, each with the same usage.
-        if message.get("id") in totals["seen"]:
-            continue
-        totals["seen"].add(message.get("id"))
-        u = message.get("usage", {})
-        totals["context"] = u.get("input_tokens", 0) + u.get("cache_creation_input_tokens", 0) + u.get("cache_read_input_tokens", 0)
-        totals["in"] += totals["context"]
-        totals["out"] += u.get("output_tokens", 0)
+        add_entry_to_totals(totals, e)
     return totals
+
+
+def add_entry_to_totals(totals, e):
+    totals["started"] = totals["started"] or e.get("timestamp")
+    if e.get("type") == "custom-title" and e.get("customTitle"):
+        totals["title"] = e["customTitle"]
+    if is_prompt(e):
+        totals.update(turn_start=e.get("timestamp"), turn_calls=0, turn_prompt=read_prompt_text(e), turn_skill=None, activity=None)
+    if e.get("type") in ("user", "assistant"):
+        totals["ended"] = (e.get("message") or {}).get("stop_reason") == "end_turn"
+        totals["limit_stop"] = read_limit_stop(e)
+    message = e.get("message") if e.get("type") == "assistant" else None
+    # API errors and limit notices are written as synthetic replies with no model, effort or usage of their own.
+    if message and not e.get("isApiErrorMessage") and message.get("model") != "<synthetic>":
+        add_reply_to_totals(totals, e, message)
+
+
+def add_reply_to_totals(totals, e, message):
+    totals.update(model=message.get("model", "?"), effort=e.get("effort", "?"), last_reply=e.get("timestamp"))
+    if e.get("attributionSkill"):
+        totals["turn_skill"] = e["attributionSkill"]
+    for block in message.get("content", []):
+        if block.get("type") == "tool_use":
+            totals["turn_calls"] += 1
+            if block.get("name") not in SILENT_TOOLS:
+                totals["activity"] = format_activity(block)
+    # A reply with several content blocks is written once per block, each with the same usage.
+    if message.get("id") in totals["seen"]:
+        return
+    totals["seen"].add(message.get("id"))
+    u = message.get("usage", {})
+    totals["context"] = u.get("input_tokens", 0) + u.get("cache_creation_input_tokens", 0) + u.get("cache_read_input_tokens", 0)
+    totals["in"] += totals["context"]
+    totals["out"] += u.get("output_tokens", 0)
+
+
+def read_limit_stop(entry):
+    """The uuid and reset time (epoch seconds) of a main-chain stop at a usage limit; None for any other entry. The reset time
+    comes from this entry only, never from rate-limits.json."""
+    if entry.get("isSidechain") or entry.get("apiError") != "usage_limit_reached":
+        return None
+    resets_at = ((entry.get("apiErrorParams") or {}).get("rate_limit_info") or {}).get("resetsAt")
+    return {"uuid": entry.get("uuid"), "resets_at": resets_at} if isinstance(resets_at, (int, float)) else None
 
 
 def get_active_subagents(transcript):
@@ -307,10 +326,8 @@ def read_process(pid):
 
 def find_session(s):
     """The card data of a session whose process runs, at any age, or None for one that is not shown."""
-    status = s.get("status")
     # "shell": the turn ended but a background shell still runs, so the session still works.
-    if status == "shell":
-        status = "busy"
+    status = "busy" if s.get("status") == "shell" else s.get("status")
     if not is_session_running(s):
         delete_progress_note(s.get("sessionId"))
         return None
@@ -321,41 +338,18 @@ def find_session(s):
     transcript = next(PROJECTS_DIR.glob(f"*/{s['sessionId']}.jsonl"), None)
     totals = scan_transcript(transcript) if transcript else {"model": "?", "effort": "?"}
     model, effort = totals["model"], totals["effort"]
-    note, written = read_progress_note(s["sessionId"])
-    # A reply that ends with questions writes "Input needed": Claude Code calls the session idle, but it waits for an answer until the
-    # next prompt starts a turn after the note. A subagent report or task notification can start a turn with no prompt: the session
-    # then shows busy, and the note waits for that turn to end. A background agent keeps the status busy after the turn has ended.
-    if note == "Input needed" and written >= get_turn_start_time(totals):
-        if status == "busy" and not totals.get("ended"):
-            note = ""
-        else:
-            status = "waiting"
-    # Left in place, the note of an earlier task would show again when the session next works.
-    elif note == "Input needed" or status not in ("busy", "waiting"):
-        delete_progress_note(s["sessionId"])
-        note = ""
+    status, note = read_status_and_note(s["sessionId"], status, totals)
+    limit_stop = totals.get("limit_stop") if status != "busy" and not note else None
+    if limit_stop:
+        note = f"Continues at {datetime.fromtimestamp(limit_stop['resets_at'] + LIMIT_CONTINUE_DELAY_SECONDS):%H:%M}"
     progress, footer = [], []
     if transcript:
-        if status == "busy":
-            progress = build_turn_progress(totals)
-            footer.append(f"{totals['turn_calls']} tool calls")
-        footer.append(f"{format_tokens(totals['in'])} in / {format_tokens(totals['out'])} out")
-        statusline_inputs[s["sessionId"]] = {
-            "session_id": s["sessionId"],
-            "transcript_path": str(transcript),
-            "cwd": cwd,
-            "model": model,
-            "context_tokens": totals["context"],
-        }
+        progress, footer = build_progress_and_footer(totals, status)
+        save_statusline_input(s["sessionId"], transcript, cwd, totals)
     task = build_running_task(totals) if transcript else ""
     detail, highlight = task, bool(task)
     color = {"busy": "working", "waiting": "waiting"}.get(status, "idle")
-    # The session file can hold a name Claude Code made up, such as a background job's; the transcript keeps the /rename title.
-    name = totals.get("title") or s.get("name")
-    # A background session gets its own card, tagged: a copy named "ARC (2)" shows as "ARC[BG]", apart from the ARC it came from.
-    tag = "[BG]" if s.get("kind") == "bg" else ""
-    if name and tag:
-        name = re.sub(r"\s*\(\d+\)$", "", name) + tag
+    name, tag = read_session_name(s, totals)
     return {
         "key": s["sessionId"],
         "cwd": cwd,
@@ -374,7 +368,55 @@ def find_session(s):
         # /clear starts a new transcript with no reply yet; its timer counts from the transcript's first entry.
         "cache_start": parse_timestamp(totals.get("last_reply") or totals.get("started")),
         "note": note,
+        "limit_stop": limit_stop,
+        "pid": s.get("pid"),
     }
+
+
+def read_session_name(s, totals):
+    """The session's name, None when it has none, and its card tag."""
+    # The session file can hold a name Claude Code made up, such as a background job's; the transcript keeps the /rename title.
+    name = totals.get("title") or s.get("name")
+    # A background session gets its own card, tagged: a copy named "ARC (2)" shows as "ARC[BG]", apart from the ARC it came from.
+    tag = "[BG]" if s.get("kind") == "bg" else ""
+    if name and tag:
+        name = re.sub(r"\s*\(\d+\)$", "", name) + tag
+    return name, tag
+
+
+def read_status_and_note(session_id, status, totals):
+    """The status to show and the progress note; drops a note that no longer applies."""
+    note, written = read_progress_note(session_id)
+    # A reply that ends with questions writes "Input needed": Claude Code calls the session idle, but it waits for an answer until the
+    # next prompt starts a turn after the note. A subagent report or task notification can start a turn with no prompt: the session
+    # then shows busy, and the note waits for that turn to end. A background agent keeps the status busy after the turn has ended.
+    if note == "Input needed" and written >= get_turn_start_time(totals):
+        if status == "busy" and not totals.get("ended"):
+            return status, ""
+        return "waiting", note
+    # Left in place, the note of an earlier task would show again when the session next works.
+    if note == "Input needed" or status not in ("busy", "waiting"):
+        delete_progress_note(session_id)
+        return status, ""
+    return status, note
+
+
+def save_statusline_input(session_id, transcript, cwd, totals):
+    statusline_inputs[session_id] = {
+        "session_id": session_id,
+        "transcript_path": str(transcript),
+        "cwd": cwd,
+        "model": totals["model"],
+        "context_tokens": totals["context"],
+    }
+
+
+def build_progress_and_footer(totals, status):
+    """A busy session's turn progress and tool calls, and the session's tokens in and out."""
+    busy = status == "busy"
+    progress = build_turn_progress(totals) if busy else []
+    footer = [f"{totals['turn_calls']} tool calls"] if busy else []
+    return progress, footer + [f"{format_tokens(totals['in'])} in / {format_tokens(totals['out'])} out"]
 
 
 # A process a mod or skill starts runs a script from its own folder; the folder name says whose work it is.
@@ -698,6 +740,52 @@ def update_sessions():
     """Scans every session; returns the sessions to show."""
     with render_lock:
         return get_sessions()
+
+
+def continue_limited_sessions():
+    """Every 15 s, sends "continue" to each session stopped at a usage limit once that limit has reset; once per limit stop. A limit
+    hit again writes a new entry with a new uuid, so the next wait starts by itself."""
+    sent = set()
+    while True:
+        for s in update_sessions():
+            stop = s.get("limit_stop")
+            due = bool(stop) and stop["uuid"] not in sent and time.time() >= stop["resets_at"] + LIMIT_CONTINUE_DELAY_SECONDS
+            if due:
+                send_continue(s["pid"])
+                sent.add(stop["uuid"])
+        time.sleep(15)
+
+
+# Run in a child, so the AttachConsole stays out of this process, whose console is the session that started it. The Enter goes in
+# a second write 0.3 s later, so Claude Code does not take the text and the Enter as one paste.
+TYPE_CONTINUE = r"""
+import ctypes, sys, time
+from ctypes import wintypes
+class KEY_EVENT_RECORD(ctypes.Structure):
+    _fields_ = [("down", wintypes.BOOL), ("repeat", wintypes.WORD), ("vk", wintypes.WORD), ("scan", wintypes.WORD),
+                ("char", wintypes.WCHAR), ("state", wintypes.DWORD)]
+class INPUT_RECORD(ctypes.Structure):
+    _fields_ = [("type", wintypes.WORD), ("key", KEY_EVENT_RECORD)]
+kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+kernel32.CreateFileW.restype = wintypes.HANDLE
+if not kernel32.AttachConsole(int(sys.argv[1])):
+    sys.exit(1)
+conin = kernel32.CreateFileW("CONIN$", 0xC0000000, 3, None, 3, 0, None)  # read and write, shared, OPEN_EXISTING
+def write_keys(text):
+    keys = [(down, ch, 0x0D if ch == "\r" else ctypes.WinDLL("user32").VkKeyScanW(ch) & 0xFF) for ch in text for down in (1, 0)]
+    records = (INPUT_RECORD * len(keys))(*(INPUT_RECORD(1, KEY_EVENT_RECORD(down, 1, vk, 0, ch, 0)) for down, ch, vk in keys))
+    kernel32.WriteConsoleInputW(wintypes.HANDLE(conin), records, len(keys), ctypes.byref(wintypes.DWORD()))
+write_keys("continue")
+time.sleep(0.3)
+write_keys("\r")
+"""
+
+
+def send_continue(pid):
+    """Types "continue" and Enter into the console of the session with this pid; Windows only."""
+    if sys.platform != "win32" or not pid:
+        return
+    subprocess.Popen([sys.executable, "-c", TYPE_CONTINUE, str(pid)], **DETACHED)
 
 
 def build_title_and_cards(sessions):
@@ -1510,6 +1598,7 @@ if __name__ == "__main__":
         missed_heartbeats = -RELOAD_VIEWER_WAIT_SECONDS
     threading.Thread(target=restart_on_new_version, args=(port,), daemon=True).start()
     threading.Thread(target=run_statuslines, daemon=True).start()
+    threading.Thread(target=continue_limited_sessions, daemon=True).start()
     threading.Thread(target=exit_when_window_closed, daemon=True).start()
     try:
         server.serve_forever()

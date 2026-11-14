@@ -43,6 +43,8 @@ window.
   by folder and session name, so a horn stays green when `/clear` gives the session a new id;
   after a reload, no tone plays until a card is pressed.
 - On Windows, a click on a card brings the window its session runs in to the front: the terminal or IDE, not the tab in it.
+- A session stopped at a usage limit shows `Continues at HH:MM` and, on Windows, gets `continue` typed in 1 minute after the
+  limit resets, while the monitor runs. A limit hit again starts the next wait by itself.
 - The page fits itself to the window and never scrolls. When the cards do not fit, it first hides the title row, its button and
   the pills, then shows the cards as one line each, `Busy/Blocked/Idle - name - progress` with the cache minutes at the right end,
   from the bottom card up. A taller window brings them back.
@@ -75,6 +77,7 @@ window.
 | One monitor at a time, closes with its window | yes | yes |
 | "Pin on top" button | Chrome, Edge | Chrome, Edge |
 | A click on a card focuses its session's window | yes | no |
+| `continue` after a usage limit resets | yes | no |
 | Tested | yes | not yet |
 
 ## Python
