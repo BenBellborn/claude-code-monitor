@@ -183,7 +183,8 @@ def add_entry_to_totals(totals, e):
     if e.get("type") in ("user", "assistant"):
         totals["ended"] = (e.get("message") or {}).get("stop_reason") == "end_turn"
     # A task notification or tool result written after the stop runs no new turn, so only a prompt or a reply clears it.
-    totals["limit_stop"] = read_limit_stop(e) or totals["limit_stop"]
+    if is_main_chain_limit_entry(e):
+        totals["limit_stop"] = read_limit_stop(e)
     message = e.get("message") if e.get("type") == "assistant" else None
     # API errors and limit notices are written as synthetic replies with no model, effort or usage of their own.
     if message and not e.get("isApiErrorMessage") and message.get("model") != "<synthetic>":
@@ -209,11 +210,13 @@ def add_reply_to_totals(totals, e, message):
     totals["out"] += u.get("output_tokens", 0)
 
 
+def is_main_chain_limit_entry(entry):
+    return not entry.get("isSidechain") and entry.get("apiError") == "usage_limit_reached"
+
+
 def read_limit_stop(entry):
-    """The uuid and reset time (epoch seconds) of a main-chain stop at a usage limit; None for any other entry. The reset time
+    """The uuid and reset time (epoch seconds) of a stop at a usage limit; None when the entry has no reset time. The reset time
     comes from this entry only, never from rate-limits.json."""
-    if entry.get("isSidechain") or entry.get("apiError") != "usage_limit_reached":
-        return None
     resets_at = ((entry.get("apiErrorParams") or {}).get("rate_limit_info") or {}).get("resetsAt")
     return {"uuid": entry.get("uuid"), "resets_at": resets_at} if isinstance(resets_at, (int, float)) else None
 
