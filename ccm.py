@@ -1287,6 +1287,10 @@ PAGE = """<!DOCTYPE html>
                 await new Promise(done => setTimeout(done, 1000));
             }
         }
+        // Debug: the tab's lifecycle in ccm-window.log, to learn why a hidden tab stops streaming; remove once it is known.
+        const logPage = event => fetch("/debug", { method: "POST", body: JSON.stringify({ line: `page ${event} ${document.visibilityState}` }), keepalive: true }).catch(() => { });
+        logPage(document.wasDiscarded ? "load after discard" : "load");
+        for (const event of ["freeze", "resume", "visibilitychange"]) document.addEventListener(event, () => logPage(event));
         const events = new EventSource("/events");
         events.onmessage = e => {
             const [version, title, cards, colors] = JSON.parse(e.data);
@@ -1399,20 +1403,30 @@ class MonitorHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "text/event-stream")
         self.send_header("Cache-Control", "no-cache")
         self.end_headers()
-        global missed_heartbeats
-        last = None
+        global open_streams
+        with stream_lock:
+            open_streams += 1
+            log_window(f"stream open ({open_streams} open)")
+        last, reason = None, "error"
         # ponytail: re-reads the session files every second; a file watcher if that ever costs too much.
         try:
             while True:
                 current = [VERSION, *build_title_and_cards(update_sessions()), build_color_variables()]
+                started = time.time()
                 # An unchanged list still sends a comment line, so a closed window shows up as a failed write.
                 self.wfile.write(f"data: {json.dumps(current)}\n\n".encode("utf-8") if current != last else b":\n\n")
                 self.wfile.flush()
+                # Debug: a frozen tab stops reading, so the write waits; remove once it is known why hidden tabs stop streaming.
+                if time.time() - started > 2:
+                    log_window(f"stream write waited {time.time() - started:.0f} s")
                 last = current
-                missed_heartbeats = 0
                 time.sleep(1)
-        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
-            pass
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError) as e:
+            reason = type(e).__name__
+        finally:
+            with stream_lock:
+                open_streams -= 1
+                log_window(f"stream closed: {reason} ({open_streams} open)")
 
     def log_message(self, format, *args):
         return  # Suppress console log spam
@@ -1450,6 +1464,10 @@ def start_with_instance_claim(command):
 
 # Counted in 1 s ticks, not wall-clock time: a clock jump (resume from sleep, NTP step) must not end a viewed monitor.
 missed_heartbeats = 0
+# The /events streams open now. A page counts as gone only when its stream closes: a frozen tab keeps its stream open but stops
+# reading it, so a write that waits does not end the monitor.
+open_streams = 0
+stream_lock = threading.Lock()
 NO_VIEWER_EXIT_SECONDS = 20
 RELOAD_VIEWER_WAIT_SECONDS = 70
 
@@ -1459,7 +1477,7 @@ def exit_when_window_closed():
     global missed_heartbeats
     while True:
         time.sleep(1)
-        missed_heartbeats += 1
+        missed_heartbeats = 0 if open_streams else missed_heartbeats + 1
         if missed_heartbeats > NO_VIEWER_EXIT_SECONDS:
             log_start_event("exit: no viewer")
             os._exit(0)

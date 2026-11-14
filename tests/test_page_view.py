@@ -60,6 +60,7 @@ def test_page_and_events_show_cards_pills_and_agent_rows():
         assert 'pin.hidden = !("documentPictureInPicture" in window);' in page, "pin button not offered on every OS"
         assert "if (watched.has(key) && !isBusy(key)) playHorn();\n                }, 3000);" in page, \
             "the horn plays at once, so a short Idle between two Busy turns plays it"
+        assert 'logPage(document.wasDiscarded ? "load after discard" : "load");' in page and             'for (const event of ["freeze", "resume", "visibilitychange"])' in page, "the tab's lifecycle is not logged"
         assert 'JSON.stringify(windowMode), keepalive: true }' in page, "a reload can drop the window position saved on close"
         assert "placings-- > 0 ? placeWindow(true) : checkBounds(), 1000)" in page, \
             "the browser's own bounds saved before the saved ones are set, or a move lost when a reload closes the window"

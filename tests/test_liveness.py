@@ -61,6 +61,17 @@ def test_clock_jump_does_not_exit_a_viewed_monitor():
         raise AssertionError("monitor exited on the first check after the jump")
 
 
+def test_open_stream_keeps_the_monitor_running():
+    ccm, _ = load_ccm([time.time()], 1, 60)
+    ccm.open_streams = 1  # a frozen tab keeps its stream open but reads nothing
+    try:
+        ccm.exit_when_window_closed()
+    except StopTicks:
+        return
+    except Exited as e:
+        raise AssertionError(f"monitor exited after {e.args[0]} s while a page held its stream open")
+
+
 def test_monitor_exits_after_missed_heartbeats():
     ccm, _ = load_ccm([time.time()], 1, 1000)
     try:

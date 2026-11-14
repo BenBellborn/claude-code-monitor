@@ -5,6 +5,7 @@ import socket
 import sys
 import tempfile
 import threading
+import time
 import types
 from pathlib import Path
 
@@ -126,6 +127,32 @@ def test_show_opens_a_window_only_when_no_page_is_connected():
         assert show("http://attacker.example") == 403 and opened == [], "a foreign page opened a window"
         assert show(f"http://{ccm.HOST}:{port}") == 204 and opened == [port], opened
         assert ccm.missed_heartbeats == 0, "the new window does not get the full time to connect"
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_monitor_counts_a_page_as_gone_only_when_its_stream_closes():
+    ccm = load()
+    tmp = Path(tempfile.mkdtemp())
+    ccm.SESSIONS_DIR, ccm.PROJECTS_DIR, ccm.PROGRESS_DIR, ccm.CLAUDE_DIR, ccm.CACHE = tmp / "sessions", tmp / "projects", tmp, tmp, tmp
+    ccm.CONFIG_PATH = tmp / "config.json"
+    server = ccm.MonitorServer((ccm.HOST, 0), ccm.MonitorHandler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        c = http.client.HTTPConnection(ccm.HOST, server.server_address[1], timeout=5)
+        c.request("GET", "/events")
+        r = c.getresponse()
+        r.fp.readline()
+        assert ccm.open_streams == 1, "an open page is not counted"
+        r.close()
+        c.close()
+        deadline = time.time() + 5
+        while ccm.open_streams and time.time() < deadline:
+            time.sleep(0.1)
+        assert ccm.open_streams == 0, "a closed page still counts as open"
+        log = (tmp / "ccm-window.log").read_text(encoding="utf-8")
+        assert "stream open (1 open)" in log and "stream closed: " in log and "(0 open)" in log, log
     finally:
         server.shutdown()
         server.server_close()
