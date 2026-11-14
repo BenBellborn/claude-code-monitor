@@ -93,13 +93,13 @@ def format_activity(block):
 
 
 def build_running_task(totals):
-    """The skill the current turn runs, else its prompt."""
-    if totals["turn_skill"]:
-        return "/" + totals["turn_skill"]
+    """The slash command the user typed, else the skill the turn runs, else its prompt."""
     prompt = totals["turn_prompt"]
     # A slash command is kept whole: shortening would read "/fix" as a path.
     if prompt.startswith("/"):
         return prompt.split("\n")[0]
+    if totals["turn_skill"]:
+        return "/" + totals["turn_skill"]
     return shorten(prompt)
 
 
@@ -192,8 +192,8 @@ def add_entry_to_totals(totals, e):
 
 def add_reply_to_totals(totals, e, message):
     totals.update(model=message.get("model", "?"), effort=e.get("effort", "?"), last_reply=e.get("timestamp"), limit_stop=None)
-    if e.get("attributionSkill"):
-        totals["turn_skill"] = e["attributionSkill"]
+    # The first skill names the turn; a skill it loads later (todo-ext under /fix) is a helper.
+    totals["turn_skill"] = totals["turn_skill"] or e.get("attributionSkill")
     for block in message.get("content", []):
         if block.get("type") == "tool_use":
             totals["turn_calls"] += 1

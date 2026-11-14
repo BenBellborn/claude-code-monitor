@@ -47,10 +47,18 @@ def test_scan_transcript_skips_a_broken_line_and_keeps_the_skill_that_replied():
     assert (totals["out"], totals["turn_skill"]) == (5, "fix"), totals
 
 
-def test_running_task_is_the_skill_else_the_whole_command_else_the_short_prompt():
+def test_scan_transcript_keeps_the_first_skill_of_the_turn():
+    path = Path(tempfile.mkdtemp()) / "t.jsonl"
+    lines = [{**reply("m1", 1), "attributionSkill": "fix"}, {**reply("m2", 1), "attributionSkill": "todo-ext"}]
+    path.write_text("".join(json.dumps(line) + "\n" for line in lines), encoding="utf-8")
+    assert ccm.scan_transcript(path)["turn_skill"] == "fix", "a skill loaded later in the turn replaces the first"
+
+
+def test_running_task_is_the_whole_command_else_the_skill_else_the_short_prompt():
     totals = {"turn_skill": None, "turn_prompt": "/fix all\nmore"}
-    assert ccm.build_running_task({**totals, "turn_skill": "plan"}) == "/plan"
+    assert ccm.build_running_task({**totals, "turn_skill": "todo-ext"}) == "/fix all", "a skill the command loaded hides the command"
     assert ccm.build_running_task(totals) == "/fix all", "a slash command is shortened as a path"
+    assert ccm.build_running_task({**totals, "turn_prompt": "go", "turn_skill": "plan"}) == "/plan"
     assert ccm.build_running_task({**totals, "turn_prompt": "edit src/app/x.py"}) == "edit x.py"
 
 
