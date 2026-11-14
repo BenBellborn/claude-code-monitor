@@ -181,6 +181,7 @@ def load_for_start(claimed=True, claimed_after_wait=False, shown=False):
     ccm.claim_single_instance = lambda: calls.append("wait") or claimed_after_wait
     ccm.show_running_monitor = lambda: shown
     ccm.log_start_event = lambda event: None
+    ccm.faulthandler = types.SimpleNamespace(enable=lambda file: setattr(ccm, "fault_log", file))
     return ccm, calls
 
 
@@ -211,25 +212,41 @@ THREADS = ["restart_on_new_version", "run_statuslines", "continue_limited_sessio
 def test_start_relaunches_itself_detached():
     ccm, calls = load_for_start()
     started = []
-    ccm.subprocess = types.SimpleNamespace(Popen=lambda command, env, **kwargs: started.append((command, env["CCM_DETACHED"])))
+    ccm.subprocess = types.SimpleNamespace(Popen=lambda command, env, **kwargs: started.append((command, env["CCM_DETACHED"], kwargs)))
     assert run_main(ccm, "--x", detached=False) == "exited"
-    [(command, flag)] = started
+    [(command, flag, kwargs)] = started
     assert (command[1:], flag) == ([str(ccm.SCRIPT), "--x"], "1"), started
+    kwargs["stderr"].close()
+    assert Path(kwargs["stderr"].name) == ccm.CACHE / "ccm-error.log", "a crash of the detached monitor leaves no traceback"
     assert Path(command[0]).name in ("pythonw.exe", Path(sys.executable).name), command[0]
     assert calls == [], "the hook's own process went on to start a server"
 
 
-def test_new_monitor_opens_its_window_on_the_bound_port():
+def test_new_monitor_waits_for_a_page_before_it_opens_a_window():
     ccm, calls = load_for_start()
     run_main(ccm)
-    assert calls == ["free", ("window", 8123), *THREADS], calls
+    assert calls == ["free", "open_window_unless_page_returns", *THREADS], calls
     assert (ccm.CACHE / "ccm-port.txt").read_text() == "8123", "a later start cannot find this monitor"
+    assert ccm.fault_log is sys.stderr, "a native crash of the monitor leaves no trace"
+
+
+def test_new_monitor_opens_a_window_only_when_no_page_reconnects_in_the_wait():
+    ccm = load()
+    opened, waits = [], []
+    ccm.open_monitor_window = opened.append
+    ccm.time = types.SimpleNamespace(sleep=waits.append)
+    ccm.missed_heartbeats = 0
+    ccm.open_window_unless_page_returns(8123)
+    assert opened == [], "a page left open by a monitor that died got a second window"
+    ccm.missed_heartbeats = ccm.PAGE_RETURN_WAIT_SECONDS
+    ccm.open_window_unless_page_returns(8123)
+    assert waits == [ccm.PAGE_RETURN_WAIT_SECONDS] * 2 and opened == [8123], (waits, opened)
 
 
 def test_monitor_that_waited_for_the_claim_starts():
     ccm, calls = load_for_start(claimed=False, claimed_after_wait=True)
     run_main(ccm)
-    assert calls == ["wait", "free", ("window", 8123), *THREADS], calls
+    assert calls == ["wait", "free", "open_window_unless_page_returns", *THREADS], calls
 
 
 def test_start_with_another_monitor_running_exits():

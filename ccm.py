@@ -1,4 +1,5 @@
 import ctypes
+import faulthandler
 import html
 import json
 import math
@@ -1468,6 +1469,16 @@ def open_monitor_window(port):
     webbrowser.open_new_tab(f"http://{HOST}:{port}/")
 
 
+# A page left open by a monitor that died finds the new one within a few seconds (EventSource retry, then the port scan).
+PAGE_RETURN_WAIT_SECONDS = 5
+
+
+def open_window_unless_page_returns(port):
+    """Opens a window for a new monitor, unless a page left open by the last one reconnects first."""
+    time.sleep(PAGE_RETURN_WAIT_SECONDS)
+    open_window_when_unviewed(port)
+
+
 def open_window_when_unviewed(port):
     """Opens a window for a session that starts while no page streams events, and gives that window the full time to connect."""
     global missed_heartbeats
@@ -1567,13 +1578,16 @@ def log_start_event(event):
 if __name__ == "__main__":
     # Start again detached and return, so the hooks and `! python ccm.py` in Claude Code return at once and
     # the monitor outlives them. On Windows it runs as pythonw.exe, without a console window.
+    CACHE.mkdir(parents=True, exist_ok=True)
     if os.environ.get("CCM_DETACHED") != "1":
         env = {**os.environ, "CCM_DETACHED": "1"}
         pythonw = Path(sys.executable).with_name("pythonw.exe")
         exe = str(pythonw) if sys.platform == "win32" and pythonw.exists() else sys.executable
-        subprocess.Popen([exe, str(SCRIPT), *sys.argv[1:]], env=env, **DETACHED)
+        # No one sees the detached monitor's output; its tracebacks go to this log, and a reloaded monitor inherits it.
+        with (CACHE / "ccm-error.log").open("a", encoding="utf-8") as errors:
+            subprocess.Popen([exe, str(SCRIPT), *sys.argv[1:]], env=env, **{**DETACHED, "stderr": errors})
         sys.exit(0)
-    CACHE.mkdir(parents=True, exist_ok=True)
+    faulthandler.enable(file=sys.stderr)
     # A restart after an edit keeps the port, the claim and the window that is already open; the page reloads itself.
     reloaded = "--reloaded" in sys.argv
     if reloaded:
@@ -1594,7 +1608,7 @@ if __name__ == "__main__":
     print(f"Claude Monitor running at http://{HOST}:{port}")
     print("Press Ctrl+C to stop.")
     if not reloaded:
-        open_monitor_window(port)
+        threading.Thread(target=open_window_unless_page_returns, args=(port,), daemon=True).start()
     else:
         # A hidden page's timers may fire once a minute, so its reconnect to a reloaded server can take that long.
         missed_heartbeats = -RELOAD_VIEWER_WAIT_SECONDS

@@ -61,6 +61,8 @@ window.
   page load; a plugin update leaves it alone. The color keys are `background`, `text`, `bright`, `light`, `muted`, `dim`, `working`, `waiting`, `idle`, `stopped`, `highlight`, and
   `red`, `yellow` and `orange` for the statusline's colors, e.g. `"colors": {"working": "#22c55e"}`.
 - Closing the window stops it (after 20 s). The next session start opens it again at once, also within those 20 s.
+- A tab left open by a monitor that stopped finds the new one by itself; a new monitor opens its own tab only when no open
+  tab reconnects within 5 s. A crash of the monitor leaves its traceback in `~/.claude/cache/ccm-error.log`.
 - Listens on `127.0.0.1` only, on the first free port from 8080 to 8179.
 - Reads `~/.claude/ccm/config.json`, `~/.claude/sessions`, `~/.claude/projects` (transcripts), `~/.claude/settings.json` (`statusLine`)
   and `~/.claude/cache`. Besides its config file, writes only to `~/.claude/cache`: the last statusline per session and the shared pills,
