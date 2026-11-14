@@ -12,9 +12,9 @@ CALL = {"type": "assistant", "effort": "high", "message": {"id": "m1", "model": 
         "content": [{"type": "tool_use", "name": "Grep", "input": {"pattern": "x"}}], "usage": {"input_tokens": 1000, "output_tokens": 5}}}
 
 
-def post_config(port, body, origin):
+def post_config(port, body, origin, path="/config"):
     c = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
-    c.request("POST", "/config", body=json.dumps(body), headers={"Host": f"127.0.0.1:{port}", **({"Origin": origin} if origin else {})})
+    c.request("POST", path, body=json.dumps(body), headers={"Host": f"127.0.0.1:{port}", **({"Origin": origin} if origin else {})})
     return c.getresponse().status
 
 
@@ -58,6 +58,8 @@ def test_page_and_events_show_cards_pills_and_agent_rows():
         assert "<title>\U0001f7e2 1</title>" in page, page
         assert "<h1>Claude Code Monitor</h1>" in page and f'"{ccm.VERSION}"' in page, "version label shown or reload check gone"
         assert 'pin.hidden = !("documentPictureInPicture" in window);' in page, "pin button not offered on every OS"
+        assert "if (watched.has(key) && !isBusy(key)) playHorn();\n                }, 3000);" in page, \
+            "the horn plays at once, so a short Idle between two Busy turns plays it"
         assert 'JSON.stringify(windowMode), keepalive: true }' in page, "a reload can drop the window position saved on close"
         assert "placings-- > 0 ? placeWindow(true) : checkBounds(), 1000)" in page, \
             "the browser's own bounds saved before the saved ones are set, or a move lost when a reload closes the window"
@@ -83,6 +85,15 @@ def test_page_and_events_show_cards_pills_and_agent_rows():
         assert 'windowMode = {"width": 86, "height": 400}' in page, "window size not served, or a small window's size dropped"
         assert 'id="size"' not in page and "window.addEventListener(\"resize\", fitToWindow);" in page, "Min/Max button kept or no fit on resize"
         assert "--working: #123456;" in page, "edited color not served"
+        own = f"http://127.0.0.1:{port}"
+        config["horn"]["watched"] = ["gone"]
+        ccm.CONFIG_PATH.write_text(json.dumps(config))
+        for key in ("c:/x/proj|s1", "c:/x/proj|s1", "s1"):
+            assert post_config(port, {"key": key, "on": True}, own, "/horn") == 204
+        assert json.loads(ccm.CONFIG_PATH.read_text())["horn"]["watched"] == ["c:/x/proj|s1"], "horn not saved, or a key of no shown card kept"
+        assert 'const watched = new Set(["c:/x/proj|s1"]);' in get(port, "/"), "saved horn not served"
+        post_config(port, {"key": "c:/x/proj|s1", "on": False}, own, "/horn")
+        assert json.loads(ccm.CONFIG_PATH.read_text())["horn"]["watched"] == [], "horn not turned off"
         ccm.CONFIG_PATH.write_text("{ broken")
         post_config(port, {"width": 300}, f"http://127.0.0.1:{port}")
         assert ccm.CONFIG_PATH.read_text() == "{ broken", "config being edited overwritten"

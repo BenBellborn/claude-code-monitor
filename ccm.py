@@ -41,7 +41,8 @@ PROGRESS_DIR = CACHE / "progress"
 # which a plugin update replaces.
 CONFIG_PATH = Path.home() / ".claude" / "ccm" / "config.json"
 # background.ignore: Claude Code runs git itself, for its status and file checks.
-DEFAULT_CONFIG = {"colors": {}, "window": {"width": 600, "height": 400}, "cache": {"ttlMinutes": 60}, "background": {"ignore": ["git.exe"]}}
+DEFAULT_CONFIG = {"colors": {}, "window": {"width": 600, "height": 400}, "cache": {"ttlMinutes": 60}, "background": {"ignore": ["git.exe"]},
+                  "horn": {"watched": []}}
 # Claude Code's built-in theme colors, copied from its build: they are compiled in, not kept in a file. The theme has no page
 # background (the terminal sets it), so dark themes get black and light ones white. An -ansi theme uses its plain twin.
 CC_THEMES = {
@@ -482,7 +483,8 @@ def prune_progress_notes(live_ids):
 
 
 def label_sessions(sessions):
-    """Keeps one session per folder and name, and prefixes the parent folder where a name clashes across folders."""
+    """Keeps one session per folder and name, and prefixes the parent folder where a name clashes across folders. Its horn key is
+    that folder and name, so a horn stays on when /clear gives the session a new id."""
     # An idle session loses to a busy or blocked one; between equals the most recently active one is kept.
     rank = lambda s: (s["color"] != "idle", s["updated"])
     newest = {}
@@ -491,7 +493,8 @@ def label_sessions(sessions):
         if key not in newest or rank(s) > rank(newest[key]):
             newest[key] = s
     kept = list(newest.values())
-    for s in kept:
+    for key, s in newest.items():
+        s["horn_key"] = "|".join(key)
         folder = Path(s["cwd"])
         clashes = [o for o in kept if o is not s and (o["name"] == s["name"] or Path(o["cwd"]).name == folder.name)]
         if any(o["cwd"].lower() != s["cwd"].lower() for o in clashes):
@@ -699,40 +702,63 @@ def update_sessions():
 
 def build_title_and_cards(sessions):
     """The tab title and the session cards' HTML."""
-    cards = []
     ttl_minutes = read_config()["cache"]["ttlMinutes"]
     if not isinstance(ttl_minutes, (int, float)):
         ttl_minutes = DEFAULT_CONFIG["cache"]["ttlMinutes"]
-    for s in sessions:
-        cache_minutes = math.ceil(max(0, s["cache_start"] + ttl_minutes * 60 - time.time()) / 60)
-        # A [BG] card has no prompt cache; its process's running time shows in that place.
-        running = int(time.time() - s["running_since"]) // 60 if s.get("running_since") else None
-        ttl = f'<span class="ttl">{f"{running // 60:02d}:{running % 60:02d} m" if running is not None else f"{cache_minutes}m"}</span>'
-        agents = "".join(
-            f'<div class="agent">● {build_model_effort(a["model"], a["effort"])} - '
-            f'{html.escape(a["type"]) + " - " if a["type"] else ""}{html.escape(a["activity"])}</div>'
-            for a in s["agents"]
-        )
-        detail = html.escape(s["detail"])
-        if s["highlight"]:
-            detail = f'<span class="highlight">{detail}</span>'
-        faded = " faded" if s["color"] != "working" and cache_minutes == 0 else ""
-        # A busy session always has progress; a [BG] card has none, so its activity shows instead.
-        activity = s["note"] or s["progress"] or (s["detail"] if s["color"] == "working" else "")
-        mini = " - ".join(filter(None, [STATUS_WORDS[s["color"]], f'<b class="name">{html.escape(s["label"])}</b>', html.escape(activity)]))
-        cards.append(
-            f'<div class="card {s["color"]}{faded}" data-key="{html.escape(s["key"])}">'
-            f'<div class="mini"><span class="line">{mini}</span>{ttl}</div>'
-            f'<div class="head"><span class="line"><b class="name">{html.escape(s["label"])}</b> - {build_model_effort(s["model"], s["effort"])}</span>{ttl}</div>'
-            f'<div class="state">{detail or "&nbsp;"}</div>'
-            f'<div class="progress">{STOPPED_LINES.get(s["color"]) or html.escape(s["progress"]) or "&nbsp;"}</div>{agents}'
-            f'<div class="footer">{" | ".join(statuslines.get(s["key"], []) + [html.escape(f) for f in s["footer"]]) or "&nbsp;"}</div>'
-            # Always there, so the card keeps its height when a note comes and goes.
-            f'<div class="progress-note">{html.escape(s["note"]) or "&nbsp;"}</div></div>'
-        )
-    return build_title(sessions), ("".join(cards) or '<p class="empty">No sessions running.</p>') + build_usage_pills()
+    cards = "".join(build_card(s, ttl_minutes) for s in sessions)
+    return build_title(sessions), (cards or '<p class="empty">No sessions running.</p>') + build_usage_pills()
 
 
+def build_card(s, ttl_minutes):
+    """One session's card: the full view and the one-line view, each line ending in the time and the horn toggle."""
+    cache_minutes = math.ceil(max(0, s["cache_start"] + ttl_minutes * 60 - time.time()) / 60)
+    ttl = build_card_time(s, cache_minutes) + HORN
+    detail = html.escape(s["detail"])
+    if s["highlight"]:
+        detail = f'<span class="highlight">{detail}</span>'
+    faded = " faded" if s["color"] != "working" and cache_minutes == 0 else ""
+    return (
+        f'<div class="card {s["color"]}{faded}" data-key="{html.escape(s["key"])}" data-horn="{html.escape(s["horn_key"])}">'
+        f'<div class="mini"><span class="line">{build_card_line(s)}</span>{ttl}</div>'
+        f'<div class="head"><span class="line"><b class="name">{html.escape(s["label"])}</b> - {build_model_effort(s["model"], s["effort"])}</span>{ttl}</div>'
+        f'<div class="state">{detail or "&nbsp;"}</div>'
+        f'<div class="progress">{STOPPED_LINES.get(s["color"]) or html.escape(s["progress"]) or "&nbsp;"}</div>{build_agent_rows(s)}'
+        f'<div class="footer">{" | ".join(statuslines.get(s["key"], []) + [html.escape(f) for f in s["footer"]]) or "&nbsp;"}</div>'
+        # Always there, so the card keeps its height when a note comes and goes.
+        f'<div class="progress-note">{html.escape(s["note"]) or "&nbsp;"}</div></div>'
+    )
+
+
+def build_card_line(s):
+    """The one-line view's text: status, name and what the session does."""
+    # A busy session always has progress; a [BG] card has none, so its activity shows instead.
+    activity = s["note"] or s["progress"] or (s["detail"] if s["color"] == "working" else "")
+    return " - ".join(filter(None, [STATUS_WORDS[s["color"]], f'<b class="name">{html.escape(s["label"])}</b>', html.escape(activity)]))
+
+
+def build_agent_rows(s):
+    """One row per running subagent: model, type and activity."""
+    return "".join(
+        f'<div class="agent">● {build_model_effort(a["model"], a["effort"])} - '
+        f'{html.escape(a["type"]) + " - " if a["type"] else ""}{html.escape(a["activity"])}</div>'
+        for a in s["agents"]
+    )
+
+
+def build_card_time(s, cache_minutes):
+    """The minutes until the prompt cache goes cold; a [BG] card has no prompt cache, so its process's running time shows instead."""
+    if not s.get("running_since"):
+        return f'<span class="ttl">{cache_minutes}m</span>'
+    running = int(time.time() - s["running_since"]) // 60
+    return f'<span class="ttl">{running // 60:02d}:{running % 60:02d} m</span>'
+
+
+# The toggle after the time on each card line; the page script owns its state and sound.
+HORN = (
+    '<button class="horn" title="Play a sound when this session stops being Busy">'
+    '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M3 9v6h3l10 5V4L6 9H3zm4 7 1.5 5h2.5L9.5 16H7zm11-7.5v7a4 4 0 0 0 0-7z"/></svg>'
+    "</button>"
+)
 STATUS_ORDER = {"waiting": 0, "working": 1, "idle": 2}
 # The status in a card's one-line view, by card color.
 STATUS_WORDS = {"working": "Busy", "waiting": '<span class="stopped">Blocked</span>', "idle": '<span class="stopped">Idle</span>'}
@@ -769,21 +795,50 @@ def save_config(config):
         pass
 
 
+config_lock = threading.Lock()
+
+
+def update_saved_config(change):
+    """Applies change to the saved config and writes it, one request at a time so no write is lost."""
+    with config_lock:
+        saved = read_saved_config()
+        # A file that does not parse is one the user is editing; it is never overwritten.
+        if saved is None:
+            return
+        change(saved)
+        save_config(saved)
+
+
 def save_window_mode(window):
     """Stores the pinned window's size and position; other keys in the request are dropped."""
-    saved = read_saved_config()
-    # A file that does not parse is one the user is editing; it is never overwritten.
-    if saved is None:
-        return
-    if not isinstance(saved.get("window"), dict):
-        saved["window"] = {}
     # x and y are screen pixels and go negative on a monitor left of or above the main one.
     # A window that shows one Min card is under 100 pixels tall.
     limits = {"width": (1, 10000), "height": (1, 10000), "x": (-100000, 100000), "y": (-100000, 100000)}
-    for key, (low, high) in limits.items():
-        if isinstance(window.get(key), int) and low <= window[key] <= high:
-            saved["window"][key] = window[key]
-    save_config(saved)
+
+    def change(saved):
+        if not isinstance(saved.get("window"), dict):
+            saved["window"] = {}
+        for key, (low, high) in limits.items():
+            if isinstance(window.get(key), int) and low <= window[key] <= high:
+                saved["window"][key] = window[key]
+    update_saved_config(change)
+
+
+def read_watched(horn):
+    """The horn keys in a config's horn section that play a tone; a hand edit that is not a list of strings gives none."""
+    watched = horn.get("watched") if isinstance(horn, dict) else None
+    return [key for key in watched if isinstance(key, str)] if isinstance(watched, list) else []
+
+
+def save_horn(key, on):
+    """Turns the horn of the shown card with this horn key on or off; keys of cards no longer shown are dropped."""
+    shown = {s["horn_key"] for s in update_sessions()}
+
+    def change(saved):
+        horn = saved.get("horn") if isinstance(saved.get("horn"), dict) else {}
+        watched = [k for k in read_watched(horn) if k in shown and k != key]
+        saved["horn"] = {**horn, "watched": watched + [key] if on is True and key in shown else watched}
+    update_saved_config(change)
 
 
 def place_pinned_window(title, width, height):
@@ -966,6 +1021,8 @@ PAGE = """<!DOCTYPE html>
         .head { display: flex; }
         .line { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; }
         .ttl { flex-shrink: 0; padding-left: 0.5rem; color: var(--muted); }
+        .horn { flex-shrink: 0; background: none; border: 0; padding: 0 0 0 0.4rem; line-height: 1; color: var(--muted); opacity: 0.5; cursor: pointer; }
+        .horn.on { color: var(--working); opacity: 1; }
         .card.min.idle .mini { color: var(--muted); }
         .highlight { color: var(--text); background: var(--highlight); padding: 0 4px; border-radius: 3px; }
     </style>
@@ -1079,8 +1136,41 @@ PAGE = """<!DOCTYPE html>
             });
         };
         // A click on a card brings the window its session runs in to the front.
+        // Watched cards play a tone when their session stops being Busy; config.json keeps them. A press on a card is the user
+        // gesture the browser needs before the page may play sound, so after a reload no tone plays until a card is pressed.
+        // The tone waits 3 s and plays only if the card is still not Busy, so a short Idle between two turns stays silent.
+        const watched = new Set(__WATCHED__);
+        const hornTimers = {};
+        let sound = null;
+        function playHorn() {
+            if (sound?.state !== "running") return;
+            const tone = sound.createOscillator(), gain = sound.createGain(), now = sound.currentTime;
+            tone.frequency.value = 880;
+            gain.gain.setValueAtTime(0.2, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
+            tone.connect(gain).connect(sound.destination);
+            tone.start(now);
+            tone.stop(now + 0.6);
+        }
+        function markWatchedHorns() {
+            for (const card of sessions.querySelectorAll(".card[data-horn]"))
+                for (const horn of card.querySelectorAll(".horn")) horn.classList.toggle("on", watched.has(card.dataset.horn));
+        }
+        const isBusy = key => sessions.querySelector(`.card.working[data-horn="${CSS.escape(key)}"]`) !== null;
+        sessions.onpointerdown = () => {
+            sound ??= new AudioContext();
+            sound.resume();
+        };
         sessions.onclick = e => {
             const card = e.target.closest(".card[data-key]");
+            if (card && e.target.closest(".horn")) {
+                const key = card.dataset.horn;
+                const on = !watched.delete(key);
+                if (on) watched.add(key);
+                fetch("/horn", { method: "POST", body: JSON.stringify({ key, on }) }).catch(() => { });
+                markWatchedHorns();
+                return;
+            }
             if (card) fetch("/focus", { method: "POST", body: JSON.stringify({ key: card.dataset.key }) }).catch(() => { });
         };
         // A card never shrinks mid-turn: each keeps the tallest height it has had since its session was last idle with no agents.
@@ -1111,7 +1201,18 @@ PAGE = """<!DOCTYPE html>
             const [version, title, cards, colors] = JSON.parse(e.data);
             if (version !== "__VERSION__") { reloadWhenUp(); return; }
             for (const page of [document, pipDocument]) if (page) page.title = title;
+            const busyWatched = [...watched].filter(isBusy);
             sessions.innerHTML = cards;
+            markWatchedHorns();
+            for (const key of Object.keys(hornTimers).filter(isBusy)) {
+                clearTimeout(hornTimers[key]);
+                delete hornTimers[key];
+            }
+            for (const key of busyWatched.filter(key => !isBusy(key)))
+                hornTimers[key] ??= setTimeout(() => {
+                    delete hornTimers[key];
+                    if (watched.has(key) && !isBusy(key)) playHorn();
+                }, 3000);
             for (const style of [document.getElementById("colors"), pipColors]) if (style && style.textContent !== colors) style.textContent = colors;
             lockCardHeights();
             fitToWindow();
@@ -1165,6 +1266,7 @@ class MonitorHandler(BaseHTTPRequestHandler):
         config = read_config()
         page = PAGE.replace("__VERSION__", VERSION).replace("__FIRST_PORT__", str(FIRST_PORT)).replace("__TITLE__", title).replace("__SESSIONS__", cards)
         page = page.replace("__COLORS__", build_color_variables()).replace("__WINDOW__", json.dumps(config["window"]).replace("<", "\\u003c"))
+        page = page.replace("__WATCHED__", json.dumps(read_watched(config["horn"])).replace("<", "\\u003c"))
         self.wfile.write(page.encode("utf-8"))
 
     def do_POST(self):
@@ -1175,7 +1277,7 @@ class MonitorHandler(BaseHTTPRequestHandler):
         except (ValueError, RecursionError):
             body = None
         port = self.server.server_address[1]
-        if self.path not in ("/config", "/focus", "/place", "/debug", "/show") or self.headers.get("Origin") not in (f"http://{HOST}:{port}", f"http://localhost:{port}"):
+        if self.path not in ("/config", "/focus", "/place", "/debug", "/show", "/horn") or self.headers.get("Origin") not in (f"http://{HOST}:{port}", f"http://localhost:{port}"):
             self.send_error(403)
             return
         if not isinstance(body, dict):
@@ -1191,6 +1293,8 @@ class MonitorHandler(BaseHTTPRequestHandler):
             focus_session_window(body.get("key"))
         elif self.path == "/show":
             open_window_when_unviewed(port)
+        elif self.path == "/horn":
+            save_horn(body.get("key"), body.get("on"))
         elif self.path == "/place":
             place_pinned_window(body.get("title"), body.get("width"), body.get("height"))
         else:

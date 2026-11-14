@@ -38,6 +38,10 @@ window.
   at a time; a second start waits up to 25 s for one whose window just closed, then quits.
 - Opens as a tab in your default browser. In Chrome or Edge its "Pin on top" button moves the cards into a picture-in-picture window
   that stays above other windows; closing that window puts them back in the tab.
+- A click on the horn after a card's minutes turns it green: the page then plays a short tone when that session stops being Busy.
+  The tone waits 3 s, so a short Idle between two turns stays silent. `config.json` keeps the green horns in `horn.watched`,
+  by folder and session name, so a horn stays green when `/clear` gives the session a new id;
+  after a reload, no tone plays until a card is pressed.
 - On Windows, a click on a card brings the window its session runs in to the front: the terminal or IDE, not the tab in it.
 - The page fits itself to the window and never scrolls. When the cards do not fit, it first hides the title row, its button and
   the pills, then shows the cards as one line each, `Busy/Blocked/Idle - name - progress` with the cache minutes at the right end,

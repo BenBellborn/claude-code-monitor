@@ -7,8 +7,8 @@ from pathlib import Path
 CCM_PATH = Path(__file__).resolve().parent.parent / "ccm.py"
 
 
-def sessions_shown(*files):
-    """Keys and labels get_sessions shows for these session files, all live in one folder."""
+def sessions_shown(*files, fields=("key", "label")):
+    """These fields of the cards get_sessions shows for these session files, all live in one folder."""
     spec = importlib.util.spec_from_file_location("ccm", CCM_PATH)
     ccm = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(ccm)
@@ -20,7 +20,7 @@ def sessions_shown(*files):
     for i, extra in enumerate(files):
         session = {"sessionId": f"s{i}", "cwd": "C:\\repo", "status": "busy", "updatedAt": now_ms + i, **extra}
         (ccm.SESSIONS_DIR / f"{i}.json").write_text(json.dumps(session), encoding="utf-8")
-    return sorted((s["key"], s["label"]) for s in ccm.get_sessions())
+    return sorted(tuple(s[f] for f in fields) for s in ccm.get_sessions())
 
 
 def test_two_unnamed_sessions_in_one_folder_both_show():
@@ -41,6 +41,12 @@ def test_numbered_interactive_session_keeps_its_name():
 def test_same_named_sessions_in_one_folder_merge():
     shown = sessions_shown({"kind": "interactive", "name": "CCM"}, {"kind": "interactive", "name": "CCM"})
     assert shown == [("s1", "CCM")], f"two sessions named 'CCM' in one folder not merged: {shown}"
+
+
+
+def test_horn_key_is_folder_and_name_so_a_cleared_session_keeps_its_horn():
+    shown = sessions_shown({"kind": "interactive", "name": "ARC"}, {"kind": "interactive"}, fields=("key", "horn_key"))
+    assert shown == [("s0", "c:\\repo|ARC"), ("s1", "c:\\repo|s1")], f"horn key holds the id of a named session: {shown}"
 
 
 if __name__ == "__main__":

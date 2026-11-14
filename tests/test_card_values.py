@@ -60,10 +60,11 @@ def test_cache_countdown_starts_at_each_reply_and_dims_the_card_when_cold():
         replies = [{**REAL, "timestamp": stamp(90)}, {**(SYNTHETIC if synthetic else REAL), "timestamp": stamp(minutes_ago)}]
         transcript.write_text("".join(json.dumps(e) + "\n" for e in replies), encoding="utf-8")
         session = ccm.find_session({"sessionId": "s1", "status": status, "updatedAt": time.time() * 1000})
-        return ccm.build_title_and_cards([{**session, "label": "proj"}])[1]
+        return ccm.build_title_and_cards([{**session, "label": "proj", "horn_key": "proj"}])[1]
 
     fresh = card(0.5)
     assert fresh.count('<span class="ttl">60m</span>') == 2 and "faded" not in fresh, "fresh cache not 60m on both lines, or dimmed"
+    assert fresh.count('</span><button class="horn"') == 2, "the horn toggle does not follow the time on both lines"
     assert '<span class="ttl">42m</span>' in card(18.5), "minutes left not counted from the last reply"
     assert '<span class="ttl">0m</span>' in card(61) and "faded" in card(61), "cold cache not 0m or not dimmed"
     assert "faded" in card(61, synthetic=True), "an API error reply counted as a cache refresh"
