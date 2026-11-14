@@ -5,6 +5,7 @@ frames into a 4 s loop. Needs Edge and ffmpeg. Run: python docs/demo.py
 """
 import importlib.util
 import json
+import shutil
 import subprocess
 import tempfile
 import threading
@@ -78,10 +79,18 @@ def draw_gif(ccm, tmp, url, sessions, size, gif):
         for index, session in enumerate(sessions):
             write_session(ccm, tmp, index, session, frame, now)
         shoot_frame(url, size, frames / f"{frame:02d}.png", tmp / "edge")
-    for path in ccm.SESSIONS_DIR.glob("*.json"):
-        path.unlink()
+    clear_sessions(ccm)
     join_frames(frames, gif)
     print(f"Wrote {gif}")
+
+
+def clear_sessions(ccm):
+    """Removes every session file, transcript, progress note and token total, so the next GIF starts from no sessions."""
+    shutil.rmtree(ccm.SESSIONS_DIR)
+    shutil.rmtree(ccm.PROJECTS_DIR)
+    for note in ccm.PROGRESS_DIR.glob("ccm-progress-*.txt"):
+        note.unlink()
+    ccm.transcript_totals.clear()
 
 
 def write_session(ccm, tmp, index, session, frame, now):
