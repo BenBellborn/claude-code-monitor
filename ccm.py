@@ -1169,14 +1169,15 @@ class MonitorHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         # Any site's page can post to 127.0.0.1; only the monitor's own page sends its Origin.
+        # The body is read before any reply: Windows resets a socket closed with unread data, and the reset drops the reply.
+        try:
+            body = json.loads(self.rfile.read(max(0, min(int(self.headers.get("Content-Length") or 0), 10000))))
+        except (ValueError, RecursionError):
+            body = None
         port = self.server.server_address[1]
         if self.path not in ("/config", "/focus", "/place", "/debug", "/show") or self.headers.get("Origin") not in (f"http://{HOST}:{port}", f"http://localhost:{port}"):
             self.send_error(403)
             return
-        try:
-            body = json.loads(self.rfile.read(min(int(self.headers.get("Content-Length") or 0), 10000)))
-        except ValueError:
-            body = None
         if not isinstance(body, dict):
             self.send_error(400)
             return
