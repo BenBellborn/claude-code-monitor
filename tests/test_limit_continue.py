@@ -42,6 +42,14 @@ def test_limit_entry_sets_limit_stop_and_a_later_prompt_clears_it():
     assert ccm.scan_transcript(transcript)["limit_stop"] is None, "a prompt after the limit keeps the old limit stop"
 
 
+def test_task_notification_after_the_limit_keeps_the_limit_stop():
+    ccm = load()
+    notification = {"type": "user", "timestamp": "2026-11-14T10:00:00Z",
+                    "message": {"content": "<task-notification><status>completed</status></task-notification>"}}
+    transcript = write_transcript(ccm, LIMIT, notification)
+    assert ccm.scan_transcript(transcript)["limit_stop"] == {"uuid": "u1", "resets_at": RESETS_AT}
+
+
 def test_subagent_limit_entry_sets_no_limit_stop():
     ccm = load()
     transcript = write_transcript(ccm, {**LIMIT, "isSidechain": True})

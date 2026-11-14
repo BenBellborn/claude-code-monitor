@@ -177,10 +177,12 @@ def add_entry_to_totals(totals, e):
     if e.get("type") == "custom-title" and e.get("customTitle"):
         totals["title"] = e["customTitle"]
     if is_prompt(e):
-        totals.update(turn_start=e.get("timestamp"), turn_calls=0, turn_prompt=read_prompt_text(e), turn_skill=None, activity=None)
+        totals.update(turn_start=e.get("timestamp"), turn_calls=0, turn_prompt=read_prompt_text(e), turn_skill=None, activity=None,
+                      limit_stop=None)
     if e.get("type") in ("user", "assistant"):
         totals["ended"] = (e.get("message") or {}).get("stop_reason") == "end_turn"
-        totals["limit_stop"] = read_limit_stop(e)
+    # A task notification or tool result written after the stop runs no new turn, so only a prompt or a reply clears it.
+    totals["limit_stop"] = read_limit_stop(e) or totals["limit_stop"]
     message = e.get("message") if e.get("type") == "assistant" else None
     # API errors and limit notices are written as synthetic replies with no model, effort or usage of their own.
     if message and not e.get("isApiErrorMessage") and message.get("model") != "<synthetic>":
@@ -188,7 +190,7 @@ def add_entry_to_totals(totals, e):
 
 
 def add_reply_to_totals(totals, e, message):
-    totals.update(model=message.get("model", "?"), effort=e.get("effort", "?"), last_reply=e.get("timestamp"))
+    totals.update(model=message.get("model", "?"), effort=e.get("effort", "?"), last_reply=e.get("timestamp"), limit_stop=None)
     if e.get("attributionSkill"):
         totals["turn_skill"] = e["attributionSkill"]
     for block in message.get("content", []):
