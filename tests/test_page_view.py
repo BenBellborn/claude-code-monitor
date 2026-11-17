@@ -55,7 +55,7 @@ def test_page_and_events_show_cards_pills_and_agent_rows():
     threading.Thread(target=server.serve_forever, daemon=True).start()
     try:
         page = get(port, "/")
-        assert "<title>\U0001f7e2 1</title>" in page, page
+        assert "<title>\U0001f7e2 1 ⛔ 0</title>" in page, page
         assert "<h1>Claude Code Monitor</h1>" in page and f'"{ccm.VERSION}"' in page, "version label shown or reload check gone"
         assert 'pin.hidden = !("documentPictureInPicture" in window);' in page, "pin button not offered on every OS"
         assert "if (watched.has(key) && !isBusy(key)) playHorn();\n                }, 3000);" in page, \
@@ -103,7 +103,7 @@ def test_page_and_events_show_cards_pills_and_agent_rows():
         (tmp / "settings.json").write_text(json.dumps({"theme": "light"}))
         assert "--working: rgb(44,122,57);" in get(port, "/events")[3], "theme change not sent live"
         version, title, cards, colors = get(port, "/events")
-        assert (version, title) == (ccm.VERSION, "\U0001f7e2 1"), (version, title)
+        assert (version, title) == (ccm.VERSION, "\U0001f7e2 1 ⛔ 0"), (version, title)
         assert "verifier" not in cards, f"finished agent still shown: {cards}"
         (ccm.SESSIONS_DIR / "1.json").write_text(json.dumps(
             {"sessionId": "s1", "cwd": "C:/x/proj", "status": "idle", "updatedAt": time.time() * 1000}))

@@ -553,10 +553,10 @@ def label_sessions(sessions):
 
 
 def build_title(sessions):
-    """Tab title: running sessions and ones waiting on the user (blocked or idle), leaving out a count of none."""
+    """Tab title: running sessions and ones waiting on the user (blocked or idle).
+    Both counts always show, also a 0, so the title keeps its width and the taskbar buttons do not move."""
     running = sum(s["color"] == "working" for s in sessions)
-    counts = [("🟢", running), ("⛔", len(sessions) - running)]
-    return " ".join(f"{symbol} {n}" for symbol, n in counts if n) or "No Session"
+    return f"🟢 {running} ⛔ {len(sessions) - running}"
 
 
 # Colors of the agent-models mod: its 'claude' theme key is orange, 'warning' yellow, 'inactive' grey.
