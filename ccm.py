@@ -1135,16 +1135,18 @@ PAGE = """<!DOCTYPE html>
         // The pinned window's size and position are kept in the config file.
         const windowMode = __WINDOW__;
         function saveWindowMode() { fetch("/config", { method: "POST", body: JSON.stringify(windowMode), keepalive: true }).catch(() => { }); }
-        // From the full layout, while the cards and pills reach below the window: hide the title row with its buttons and the pills,
-        // then show the cards as one line each (Min), from the bottom card up. The note hides once the window cuts it off.
+        // From the full layout, while the cards and pills reach below the window: in the pinned window hide the title row with its
+        // buttons and the pills, then show the cards as one line each (Min), from the bottom card up. The note hides once the window
+        // cuts it off. The tab always keeps its title row and pills, so the Pin button and the status line stay in reach.
         function fitToWindow() {
-            const doc = sessions.ownerDocument, view = doc.defaultView, group = [sessions.querySelector(".usage"), doc.querySelector(".top")].filter(Boolean);
+            const doc = sessions.ownerDocument, view = doc.defaultView, pinned = doc !== document;
+            const group = [sessions.querySelector(".usage"), doc.querySelector(".top")].filter(Boolean);
             const cards = [...sessions.querySelectorAll(".card")];
             for (const row of [...group, note, document.querySelector(".top")]) row.style.display = "";
             sessions.classList.remove("cut");
             for (const card of cards) card.classList.remove("min");
             const isCut = row => Math.floor(row.getBoundingClientRect().bottom) > view.innerHeight;
-            if (isCut(sessions)) {
+            if (pinned && isCut(sessions)) {
                 for (const row of group) row.style.display = "none";
                 sessions.classList.add("cut");
             }
