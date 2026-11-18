@@ -1088,7 +1088,7 @@ PAGE = """<!DOCTYPE html>
         /* The page never scrolls: it steps down to fit the window, and a tiny window clips what is left. With the title row hidden the padding goes too. */
         html { overflow: hidden; }
         body:has(> #sessions.cut) { padding: 0; }
-        #pin { background: transparent; color: var(--light); border: 1px solid var(--dim); border-radius: 6px; padding: 4px 12px; cursor: pointer; }
+        #pin, #allow-audio { background: transparent; color: var(--light); border: 1px solid var(--dim); border-radius: 6px; padding: 4px 12px; cursor: pointer; }
         .card { border: 1px solid var(--dim); padding: 1rem 15px 1rem 1rem; border-radius: 6px; margin-bottom: 0.75rem; border-left: 4px solid var(--dim); box-sizing: border-box; cursor: pointer; }
         .working { border-left-color: var(--working); }
         .waiting { border-left-color: var(--waiting); }
@@ -1122,14 +1122,18 @@ PAGE = """<!DOCTYPE html>
         .horn.on { color: var(--working); opacity: 1; }
         .card.min.idle .mini { color: var(--muted); }
         .highlight { color: var(--text); background: var(--highlight); padding: 0 4px; border-radius: 3px; }
+        #allow-audio { display: block; margin-bottom: 0.5rem; }
+        #allow-audio[hidden] { display: none; }
     </style>
 </head>
 <body>
     <div class="top"><h1>Claude Code Monitor</h1><span class="buttons"><button id="pin" hidden>Pin on top</button></span></div>
+    <button id="allow-audio" hidden>Allow audio</button>
     <div id="sessions">__SESSIONS__</div>
     <p class="note" id="note"></p>
     <script>
         const sessions = document.getElementById("sessions"), note = document.getElementById("note"), pin = document.getElementById("pin");
+        const allowAudio = document.getElementById("allow-audio");
         // Chrome and Edge show the cards in a picture-in-picture window that stays on top.
         pin.hidden = !("documentPictureInPicture" in window);
         // The pinned window's size and position are kept in the config file.
@@ -1160,6 +1164,8 @@ PAGE = """<!DOCTYPE html>
         // The theme colors and the title change live, in the tab and the pinned window; the title shows in the taskbar.
         let pipColors = null, pipDocument = null;
         pin.onclick = async () => {
+            // The press is a user gesture, so it also allows the sound and hides the Allow audio button.
+            sound.resume();
             const pip = await documentPictureInPicture.requestWindow({ width: windowMode.width, height: windowMode.height });
             // Debug: logs each load and save of the window's bounds, with what the window reports, to this tab's console and to
             // ~/.claude/cache/ccm-window.log; remove once the position is right.
@@ -1197,7 +1203,7 @@ PAGE = """<!DOCTYPE html>
             const buttons = Object.assign(pip.document.createElement("span"), { className: "buttons" });
             buttons.append(unpin);
             header.append(buttons);
-            pip.document.body.append(header, sessions, note);
+            pip.document.body.append(header, allowAudio, sessions, note);
             pin.hidden = true;
             fitToWindow();
             pip.addEventListener("resize", fitToWindow);
@@ -1228,21 +1234,30 @@ PAGE = """<!DOCTYPE html>
                 clearTimeout(saveTimer);
                 debugBounds("close", windowMode);
                 if (placings < 0) saveBounds();
-                document.querySelector(".top").after(sessions, note);
+                document.querySelector(".top").after(allowAudio, sessions, note);
                 pin.hidden = false;
                 pipColors = null;
                 fitToWindow();
             });
         };
         // A click on a card brings the window its session runs in to the front.
-        // Watched cards play a tone when their session stops being Busy; config.json keeps them. A press on a card is the user
-        // gesture the browser needs before the page may play sound, so after a reload no tone plays until a card is pressed.
+        // Watched cards play a tone when their session stops being Busy; config.json keeps them. The browser keeps the sound
+        // suspended until a user gesture on the page, so after a browser start or reload no tone plays until a press on a card or
+        // on the Allow audio button. That button shows above the cards while the sound is suspended and a shown card is watched.
         // The tone waits 3 s and plays only if the card is still not Busy, so a short Idle between two turns stays silent.
         const watched = new Set(__WATCHED__);
         const hornTimers = {};
-        let sound = null;
+        const sound = new AudioContext();
+        function showAllowAudio() {
+            const hidden = sound.state === "running" || ![...sessions.querySelectorAll(".card[data-horn]")].some(card => watched.has(card.dataset.horn));
+            if (allowAudio.hidden === hidden) return;
+            allowAudio.hidden = hidden;
+            fitToWindow();
+        }
+        sound.onstatechange = showAllowAudio;
+        allowAudio.onclick = () => sound.resume();
         function playHorn() {
-            if (sound?.state !== "running") return;
+            if (sound.state !== "running") return;
             const tone = sound.createOscillator(), gain = sound.createGain(), now = sound.currentTime;
             tone.frequency.value = 880;
             gain.gain.setValueAtTime(0.2, now);
@@ -1254,12 +1269,10 @@ PAGE = """<!DOCTYPE html>
         function markWatchedHorns() {
             for (const card of sessions.querySelectorAll(".card[data-horn]"))
                 for (const horn of card.querySelectorAll(".horn")) horn.classList.toggle("on", watched.has(card.dataset.horn));
+            showAllowAudio();
         }
         const isBusy = key => sessions.querySelector(`.card.working[data-horn="${CSS.escape(key)}"]`) !== null;
-        sessions.onpointerdown = () => {
-            sound ??= new AudioContext();
-            sound.resume();
-        };
+        sessions.onpointerdown = () => sound.resume();
         sessions.onclick = e => {
             const card = e.target.closest(".card[data-key]");
             if (card && e.target.closest(".horn")) {
@@ -1284,6 +1297,7 @@ PAGE = """<!DOCTYPE html>
             }
         }
         // The lock measures the cards at full size, before the first fit makes any Min.
+        markWatchedHorns();
         lockCardHeights();
         fitToWindow();
         // A reload while the monitor restarts would leave an error page with no script to recover; reload only once the page loads.
