@@ -1320,7 +1320,13 @@ PAGE = """<!DOCTYPE html>
             if (version !== "__VERSION__") { reloadWhenUp(); return; }
             for (const page of [document, pipDocument]) if (page) page.title = title;
             const busyWatched = [...watched].filter(isBusy);
+            // Debug: each status change of a watched card and each horn timer in ccm-window.log, to learn why a Blocked card stays
+            // silent; remove once it is known.
+            const cardStatus = key => sessions.querySelector(`.card[data-horn="${CSS.escape(key)}"]`)?.classList[1] ?? "gone";
+            const statusBefore = Object.fromEntries([...watched].map(key => [key, cardStatus(key)]));
             sessions.innerHTML = cards;
+            for (const key of watched)
+                if (cardStatus(key) !== statusBefore[key]) logPage(`horn ${key} ${statusBefore[key]} -> ${cardStatus(key)}, sound ${sound.state}`);
             markWatchedHorns();
             for (const key of Object.keys(hornTimers).filter(isBusy)) {
                 clearTimeout(hornTimers[key]);
@@ -1329,6 +1335,7 @@ PAGE = """<!DOCTYPE html>
             for (const key of busyWatched.filter(key => !isBusy(key)))
                 hornTimers[key] ??= setTimeout(() => {
                     delete hornTimers[key];
+                    logPage(`horn ${key} timer: ${watched.has(key) && !isBusy(key) ? "play" : "skip"}, sound ${sound.state}`);
                     if (watched.has(key) && !isBusy(key)) playHorn();
                 }, 3000);
             for (const style of [document.getElementById("colors"), pipColors]) if (style && style.textContent !== colors) style.textContent = colors;
