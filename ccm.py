@@ -1090,6 +1090,7 @@ PAGE = """<!DOCTYPE html>
         body:has(> #sessions.cut) { padding: 0; }
         #pin, #allow-audio { background: transparent; color: var(--light); border: 1px solid var(--dim); border-radius: 6px; padding: 4px 12px; cursor: pointer; }
         .card { border: 1px solid var(--dim); padding: 1rem 15px 1rem 1rem; border-radius: 6px; margin-bottom: 0.75rem; border-left: 4px solid var(--dim); box-sizing: border-box; cursor: pointer; }
+        .card:hover { background: color-mix(in srgb, var(--background) 92%, var(--text)); }
         .working { border-left-color: var(--working); }
         .waiting { border-left-color: var(--waiting); }
         .idle { border-left-color: var(--idle); }
