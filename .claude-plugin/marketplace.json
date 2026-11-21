@@ -1,12 +1,17 @@
 {
   "name": "claude-code-monitor",
   "owner": { "name": "Ben Bellborn" },
-  "description": "Claude Code Monitor: a live window that shows every Claude Code session at a glance.",
+  "description": "Claude Code Monitor and skill-map: Claude Code plugins by Ben Bellborn.",
   "plugins": [
     {
       "name": "ccm",
       "source": "./",
       "description": "A live window with one card per Claude Code session: what it runs, if it waits on you, its statusline."
+    },
+    {
+      "name": "skill-map",
+      "source": { "source": "github", "repo": "BenBellborn/skill-map" },
+      "description": "Draws a zoomable map of your Claude Code skills, hooks, mods and plugins: which md files, agents and tools each command pulls in, and where tokens can be saved."
     }
   ]
 }
