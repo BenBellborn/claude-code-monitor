@@ -45,11 +45,11 @@ window.
 - On Windows, a click on a card brings the window its session runs in to the front: the terminal or IDE, not the tab in it.
 - A session stopped at a usage limit shows `Continues at HH:MM` and, on Windows, gets `continue` typed in 1 minute after the
   limit resets, while the monitor runs. A limit hit again starts the next wait by itself.
-- The page fits itself to the window and never scrolls. When the cards do not fit, it first hides the title row, its button and
-  the pills, then shows the cards as one line each, `Busy/Blocked/Idle - name - progress` with the cache minutes at the right end,
-  from the bottom card up. A taller window brings them back.
+- The page fits itself to the window and never scrolls. When the cards do not fit, it shows them as one line each,
+  `Busy/Blocked/Idle - name - progress` with the cache minutes at the right end, from the bottom card up. The pinned window first
+  hides the title row, its button and the pills. A taller window brings them back.
 
-  <img src="docs/demo-min.gif" width="480" alt="A small pinned window: the top cards in full, the bottom ones as one line each with their cache minutes">
+  <img src="docs/demo-min.gif" width="480" alt="A small window: the top card in full, the cards below it as one line each with their cache minutes">
 
 - The page takes Claude Code's theme (`/theme`, including a custom theme in `~/.claude/themes`) and follows a change within a
   second. Dark themes get a black page, light ones white; an `-ansi` theme uses its plain twin's colors.

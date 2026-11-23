@@ -53,7 +53,7 @@ def main():
         url = f"http://127.0.0.1:{server.server_address[1]}/"
         try:
             draw_gif(ccm, tmp, url, MAIN, (838, 585), DOCS / "demo.gif")
-            draw_gif(ccm, tmp, url, MINI, (480, 215), DOCS / "demo-min.gif")
+            draw_gif(ccm, tmp, url, MINI, (480, 400), DOCS / "demo-min.gif")
         finally:
             server.shutdown()
             server.server_close()
@@ -145,10 +145,18 @@ def shoot_frame(url, size, png, profile):
     # No --virtual-time-budget: the page's /events stream never goes idle, so virtual time never ends and Edge never shoots.
     # Now and then the load event never comes either; --timeout=2000 then stops the load and shoots.
     # Edge's child processes inherit its handles, so its output goes to DEVNULL, not to a pipe that would stay open.
-    subprocess.run([EDGE, "--headless", "--disable-gpu", "--no-first-run", "--hide-scrollbars", f"--user-data-dir={profile}",
-                    f"--screenshot={png}", "--force-device-scale-factor=2", f"--window-size={width},{height}",
-                    "--timeout=2000", url],
-                   check=True, timeout=60, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    # Now and then headless Edge hangs and never shoots or exits; a second or third start shoots the same page.
+    for attempt in range(3):
+        try:
+            subprocess.run([EDGE, "--headless", "--disable-gpu", "--no-first-run", "--hide-scrollbars",
+                            f"--user-data-dir={profile}", f"--screenshot={png}", "--force-device-scale-factor=2",
+                            f"--window-size={width},{height}", "--timeout=2000", url],
+                           check=True, timeout=60, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return
+        except subprocess.TimeoutExpired:
+            if attempt == 2:
+                raise
+            print(f"Edge hung on {png.name}, trying again")
 
 
 def join_frames(frames, gif):
