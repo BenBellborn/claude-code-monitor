@@ -345,7 +345,8 @@ def find_session(s):
     totals = scan_transcript(transcript) if transcript else {"model": "?", "effort": "?"}
     model, effort = totals["model"], totals["effort"]
     status, note = read_status_and_note(s["sessionId"], status, totals)
-    limit_stop = totals.get("limit_stop") if status != "busy" and not note else None
+    # A session at a limit can keep a busy or waiting status and an earlier task's progress note; the stop wins over both.
+    limit_stop = totals.get("limit_stop")
     if limit_stop:
         note = f"Continues at {datetime.fromtimestamp(limit_stop['resets_at'] + LIMIT_CONTINUE_DELAY_SECONDS):%H:%M}"
     progress, footer = [], []

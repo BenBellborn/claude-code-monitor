@@ -76,11 +76,14 @@ def test_idle_session_at_a_limit_shows_when_it_continues():
     assert card["limit_stop"] == {"uuid": "u1", "resets_at": RESETS_AT} and card["pid"] == os.getpid()
 
 
-def test_busy_session_at_a_limit_gets_no_limit_stop():
+@pytest.mark.parametrize("status", ["busy", "waiting"])
+def test_session_at_a_limit_with_a_progress_note_still_gets_the_limit_stop(status):
     ccm = load()
     write_transcript(ccm, LIMIT)
-    card = ccm.find_session({"sessionId": "s1", "pid": os.getpid(), "status": "busy", "cwd": "C:/x"})
-    assert card["note"] == "" and card["limit_stop"] is None
+    (ccm.PROGRESS_DIR / "ccm-progress-s1.txt").write_text("Round 2 · Step 1/4: applying plans", encoding="utf-8")
+    card = ccm.find_session({"sessionId": "s1", "pid": os.getpid(), "status": status, "cwd": "C:/x"})
+    assert card["limit_stop"] == {"uuid": "u1", "resets_at": RESETS_AT}, f"{status} session with a progress note lost its limit stop"
+    assert card["note"] == f"Continues at {datetime.fromtimestamp(RESETS_AT + 60):%H:%M}"
 
 
 def test_send_continue_types_continue_and_enter_into_the_session_console():
