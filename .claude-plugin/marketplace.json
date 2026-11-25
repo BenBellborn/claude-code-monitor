@@ -1,7 +1,7 @@
 {
   "name": "claude-code-monitor",
   "owner": { "name": "Ben Bellborn" },
-  "description": "Claude Code Monitor and skill-map: Claude Code plugins by Ben Bellborn.",
+  "description": "Claude Code Monitor, skill-map and session-pane:Claude Code plugins by Ben Bellborn.",
   "plugins": [
     {
       "name": "ccm",
@@ -12,6 +12,11 @@
       "name": "skill-map",
       "source": { "source": "github", "repo": "BenBellborn/skill-map" },
       "description": "Draws a zoomable map of your Claude Code skills, hooks, mods and plugins: which md files, agents and tools each command pulls in, and where tokens can be saved."
+    },
+    {
+      "name": "session-pane",
+      "source": { "source": "github", "repo": "BenBellborn/session-pane" },
+      "description": "A pane beside the chat that shows what the session does now: denied permissions, changed files with their diffs, running agents and background tasks, and the open tasks of your TODO file."
     }
   ]
 }
