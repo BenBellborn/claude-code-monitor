@@ -162,5 +162,20 @@ Remove the Claude Code Monitor completely:
   `CLAUDE_CODE_PLUGIN_PREFER_HTTPS=1` so Claude Code clones over HTTPS, then try again.
 - **Nothing at all:** run `python3 --version` or `python --version`; the plugin needs one of them on the PATH.
 
+## More plugins in this marketplace
+### [session-pane](https://github.com/BenBellborn/session-pane)
+A pane beside the chat that shows denied permissions, changed files with diffs, running agents and tasks, and your open TODO tasks.
+```text
+claude plugin install session-pane --marketplace BenBellborn/claude-code-monitor
+```
+<img src="https://raw.githubusercontent.com/BenBellborn/session-pane/main/docs/demo.png" width="560" alt="session-pane with denied calls, changed files, a diff, agents and tasks">
+
+### [skill-map](https://github.com/BenBellborn/skill-map)
+A zoomable map of your skills, hooks and plugins: what each command pulls in, and where to save tokens. Needs Python 3.10+.
+```text
+claude plugin install skill-map --marketplace BenBellborn/claude-code-monitor
+```
+<img src="https://raw.githubusercontent.com/BenBellborn/skill-map/main/docs/demo.png" width="838" alt="skill-map page: three command skills with their md files, agents and tools">
+
 ## License
 MIT
